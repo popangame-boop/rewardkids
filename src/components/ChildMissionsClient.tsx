@@ -181,7 +181,7 @@ export function ChildMissionsClient({ missions, pendingMissionIds, childId }: Ch
 
             {/* Photo upload */}
             <div>
-              <p className="text-fun-dark-purple text-sm font-black mb-2 text-center font-bold">Upload Foto Bukti 📸 (Maks 5)</p>
+              <p className="text-fun-dark-purple text-sm font-black mb-2 text-center font-bold">Upload Foto Bukti 📸 (Maks 5 - Opsional)</p>
               <input ref={fileInputRef} type="file" accept="image/*,image/heic,image/heif,.heic,.heif" multiple onChange={handleFileSelect} className="hidden" />
               
               <div className="grid grid-cols-3 gap-2">
@@ -217,7 +217,7 @@ export function ChildMissionsClient({ missions, pendingMissionIds, childId }: Ch
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={loading || files.length === 0}
+                disabled={loading}
                 className="flex-1 bg-fun-purple hover:bg-fun-purple/90 text-white font-black rounded-xl h-10 shadow-lg shadow-fun-purple/20 gap-2 border-none disabled:opacity-50"
               >
                 {loading ? (
