@@ -14,12 +14,7 @@ const navItems = [
   { href: "/child/history", label: "Riwayat", icon: History },
 ];
 
-interface ChildBottomNavProps {
-  childName: string;
-  balance: number;
-}
-
-export function ChildBottomNav({ childName, balance }: ChildBottomNavProps) {
+export function ChildBottomNav() {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
@@ -33,20 +28,6 @@ export function ChildBottomNav({ childName, balance }: ChildBottomNavProps) {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40">
-      {/* Balance pill */}
-      <div className="flex justify-center mb-2 px-4">
-        <div className="bg-white border border-border rounded-full px-4 py-2 flex items-center gap-2 shadow-md shadow-fun-text/5">
-          <div className="w-7 h-7 rounded-full bg-fun-purple flex items-center justify-center text-xs font-black text-white">
-            {childName.charAt(0).toUpperCase()}
-          </div>
-          <span className="text-fun-text text-xs font-black">{childName.split(" ")[0]}</span>
-          <div className="w-px h-4 bg-border" />
-          <Star className="w-3.5 h-3.5 text-fun-yellow fill-fun-yellow" />
-          <span className="text-fun-purple font-black text-sm">{balance}</span>
-          <span className="text-fun-text/60 text-xs">poin</span>
-        </div>
-      </div>
-
       {/* Nav bar */}
       <nav className="bg-white/90 backdrop-blur-2xl border-t border-border px-2 pb-safe shadow-lg">
         <div className="flex items-center max-w-lg mx-auto">

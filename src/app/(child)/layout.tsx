@@ -39,14 +39,27 @@ export default async function ChildLayout({
           </div>
           <span className="font-black text-fun-dark-purple text-sm">Kids Reward</span>
         </div>
-        <NotificationBell />
+        <div className="flex items-center gap-2.5">
+          {/* Status/Balance Pill */}
+          <div className="bg-fun-beige/60 border border-border/60 rounded-full pl-1.5 pr-3 py-1 flex items-center gap-1.5 shadow-sm">
+            <div className="w-6 h-6 rounded-full bg-fun-purple flex items-center justify-center text-[10px] font-black text-white">
+              {profile.name.charAt(0).toUpperCase()}
+            </div>
+            <span className="text-fun-text text-[11px] font-bold">{profile.name.split(" ")[0]}</span>
+            <div className="w-px h-3 bg-border/80" />
+            <Star className="w-3.5 h-3.5 text-fun-yellow fill-fun-yellow" />
+            <span className="text-fun-purple font-black text-xs">{balance ?? 0}</span>
+            <span className="text-fun-text/60 text-[10px]">poin</span>
+          </div>
+          <NotificationBell />
+        </div>
       </header>
 
       <main className="relative pb-24 min-h-[calc(100vh-64px)]">
         {children}
       </main>
 
-      <ChildBottomNav childName={profile.name} balance={balance ?? 0} />
+      <ChildBottomNav />
     </div>
   );
 }
