@@ -56,7 +56,7 @@ export async function submitMissionProof(
 
   const finalProofImageUrl = proofImageUrl || (proofImageUrls.length > 0 ? proofImageUrls[0] : "");
 
-  const { error } = await supabase.from("ledgers").insert({
+  let { error } = await supabase.from("ledgers").insert({
     user_id: profile!.id,
     mission_id: missionId,
     type: "earn",
@@ -66,6 +66,20 @@ export async function submitMissionProof(
     proof_image_url: finalProofImageUrl,
     proof_image_urls: proofImageUrls,
   });
+
+  // Fallback if the database does not have the proof_image_urls column
+  if (error && (error.code === "PGRST204" || error.message?.includes("proof_image_urls"))) {
+    const { error: fallbackError } = await supabase.from("ledgers").insert({
+      user_id: profile!.id,
+      mission_id: missionId,
+      type: "earn",
+      points: mission.point_reward,
+      description: `Selesai: ${mission.title}`,
+      status: "pending",
+      proof_image_url: finalProofImageUrl,
+    });
+    error = fallbackError;
+  }
 
   if (error) throw new Error(error.message);
 
