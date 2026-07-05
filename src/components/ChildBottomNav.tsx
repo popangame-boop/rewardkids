@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { LayoutDashboard, Target, Gift, History, LogOut, Star } from "lucide-react";
+import { LayoutDashboard, Target, Gift, History, LogOut, Star, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/child/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/child/missions", label: "Misi", icon: Target },
   { href: "/child/rewards", label: "Hadiah", icon: Gift },
+  { href: "/child/hukuman", label: "Hukuman", icon: ShieldAlert },
   { href: "/child/history", label: "Riwayat", icon: History },
 ];
 
