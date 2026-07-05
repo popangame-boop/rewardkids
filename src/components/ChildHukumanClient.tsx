@@ -35,14 +35,14 @@ export function ChildHukumanClient({ punishments, ledgers }: ChildHukumanClientP
 
         {/* Stats Summary Panel */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-red-50/60 border border-red-100 rounded-3xl p-4 flex flex-col justify-between shadow-sm">
+          <div className="bg-red-50/60 border border-red-100 rounded-[1.8rem] p-4 flex flex-col justify-between shadow-sm">
             <span className="text-fun-text/50 text-[11px] font-bold uppercase tracking-wider">Total Melanggar</span>
             <div className="flex items-baseline gap-1 mt-2">
               <span className="text-red-500 font-black text-2xl">{totalTimes}</span>
               <span className="text-fun-text/60 text-xs font-bold">kali</span>
             </div>
           </div>
-          <div className="bg-orange-50/60 border border-orange-100 rounded-3xl p-4 flex flex-col justify-between shadow-sm">
+          <div className="bg-orange-50/60 border border-orange-100 rounded-[1.8rem] p-4 flex flex-col justify-between shadow-sm">
             <span className="text-fun-text/50 text-[11px] font-bold uppercase tracking-wider">Poin Berkurang</span>
             <div className="flex items-baseline gap-1 mt-2">
               <span className="text-orange-500 font-black text-2xl">-{totalDeducted}</span>
@@ -54,7 +54,7 @@ export function ChildHukumanClient({ punishments, ledgers }: ChildHukumanClientP
 
       {/* Rules list */}
       {punishments.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-3xl border border-border shadow-sm">
+        <div className="text-center py-20 bg-white rounded-[1.8rem] border border-border shadow-sm">
           <div className="text-6xl mb-4">😇</div>
           <p className="text-fun-dark-purple font-extrabold">Tidak ada peraturan hukuman</p>
           <p className="text-fun-text/40 text-sm font-semibold">Orang tua belum menetapkan hukuman apa pun</p>
@@ -69,7 +69,7 @@ export function ChildHukumanClient({ punishments, ledgers }: ChildHukumanClientP
                 onClick={() => setSelectedPunishment(
                   selectedPunishment?.id === punishment.id ? null : punishment
                 )}
-                className={`p-4 rounded-3xl border bg-white transition-all shadow-sm cursor-pointer hover:shadow-md hover:border-fun-purple/20 ${
+                className={`p-4 rounded-[1.8rem] border bg-white transition-all shadow-sm cursor-pointer hover:shadow-md hover:border-fun-purple/20 ${
                   selectedPunishment?.id === punishment.id ? "ring-2 ring-fun-purple/30" : ""
                 }`}
               >
@@ -120,7 +120,7 @@ export function ChildHukumanClient({ punishments, ledgers }: ChildHukumanClientP
       )}
 
       {/* Advice Card */}
-      <div className="bg-fun-purple/5 border border-fun-purple/10 rounded-3xl p-4 flex gap-3.5 items-start">
+      <div className="bg-fun-purple/5 border border-fun-purple/10 rounded-[1.8rem] p-4 flex gap-3.5 items-start">
         <div className="w-8 h-8 rounded-full bg-fun-purple/10 flex items-center justify-center text-fun-purple flex-shrink-0">
           <HelpCircle className="w-4 h-4" />
         </div>
