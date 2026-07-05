@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedProfile } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { ParentSidebar } from "@/components/ParentSidebar";
 import { ParentBottomNav } from "@/components/ParentBottomNav";
@@ -8,20 +8,14 @@ export default async function ParentLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { user, profile } = await getCachedProfile();
 
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("auth_user_id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "parent") {
+  if (!user || !profile || profile.role !== "parent") {
     redirect("/login");
   }
+
+  const supabase = await createClient();
+
 
   const { data: pending } = await supabase
     .from("ledgers")

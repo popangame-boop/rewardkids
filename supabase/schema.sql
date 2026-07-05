@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS public.ledgers (
     description TEXT,
     status tx_status DEFAULT 'pending',
     proof_image_url TEXT,
+    proof_image_urls TEXT[] DEFAULT '{}',
     rejection_reason TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     reviewed_at TIMESTAMPTZ
@@ -112,6 +113,7 @@ ALTER TABLE public.ledgers ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES 
 ALTER TABLE public.ledgers ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 ALTER TABLE public.ledgers ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 ALTER TABLE public.ledgers ADD COLUMN IF NOT EXISTS punishment_id UUID REFERENCES public.punishments(id) ON DELETE SET NULL;
+ALTER TABLE public.ledgers ADD COLUMN IF NOT EXISTS proof_image_urls TEXT[] DEFAULT '{}';
 
 
 -- [4. Helper Function: Get Child Balance]

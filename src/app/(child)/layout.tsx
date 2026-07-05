@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedProfile } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { ChildBottomNav } from "@/components/ChildBottomNav";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -9,20 +9,14 @@ export default async function ChildLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { user, profile } = await getCachedProfile();
 
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, role, name")
-    .eq("auth_user_id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "child") {
+  if (!user || !profile || profile.role !== "child") {
     redirect("/login");
   }
+
+  const supabase = await createClient();
+
 
   const { data: balance } = await supabase.rpc("get_child_balance", {
     p_user_id: profile.id,

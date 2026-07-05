@@ -24,6 +24,7 @@ type LedgerWithProfile = {
   description: string | null;
   status: string;
   proof_image_url: string | null;
+  proof_image_urls: string[] | null;
   created_at: string;
   profiles: { name: string; avatar_url: string | null } | null;
 };
@@ -173,8 +174,28 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
                   </p>
                 )}
 
-                {/* Proof Image */}
-                {ledger.proof_image_url ? (
+                {/* Proof Images */}
+                {ledger.proof_image_urls && ledger.proof_image_urls.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {ledger.proof_image_urls.map((url, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setProofDialog(url)}
+                        className="w-full aspect-square rounded-xl overflow-hidden bg-fun-beige border border-border relative hover:opacity-90 transition-opacity cursor-pointer group"
+                      >
+                        <Image
+                          src={url}
+                          alt={`Bukti tugas ${idx + 1}`}
+                          fill
+                          className="object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ImageIcon className="w-5 h-5 text-white" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : ledger.proof_image_url ? (
                   <button
                     onClick={() => setProofDialog(ledger.proof_image_url!)}
                     className="w-full h-32 rounded-xl overflow-hidden bg-fun-beige border border-border relative hover:opacity-90 transition-opacity cursor-pointer group"

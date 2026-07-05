@@ -27,7 +27,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Star, Gift, Package, ToggleLeft, ToggleRight } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { compressToWebP } from "@/lib/imageCompressor";
+import { Plus, Pencil, Trash2, Star, Gift, Package, ToggleLeft, ToggleRight, Upload, Loader2 } from "lucide-react";
 
 interface RewardsParentClientProps {
   initialRewards: Reward[];
@@ -45,6 +47,35 @@ export function RewardsParentClient({ initialRewards }: RewardsParentClientProps
     stock: -1,
     image_url: "",
   });
+
+  const supabase = createClient();
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingImage(true);
+    try {
+      const compressed = await compressToWebP(file, 0.8, 800, 800);
+      const ext = compressed.name.split(".").pop();
+      const path = `rewards/reward-${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("proofs")
+        .upload(path, compressed, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from("proofs").getPublicUrl(path);
+      setForm((prev) => ({ ...prev, image_url: urlData.publicUrl }));
+      toast.success("Gambar berhasil diunggah! 📸");
+    } catch (error: any) {
+      toast.error("Gagal mengunggah gambar: " + (error?.message || error));
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const resetForm = () => {
     setForm({ title: "", description: "", point_cost: 50, stock: -1, image_url: "" });
@@ -152,9 +183,21 @@ export function RewardsParentClient({ initialRewards }: RewardsParentClientProps
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-fun-dark-purple font-bold">URL Gambar (opsional)</Label>
-                <Input value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })}
-                  placeholder="https://..." className="bg-fun-beige border-border text-fun-dark-purple placeholder:text-fun-text/30 rounded-md" />
+                <Label className="text-fun-dark-purple font-bold">Gambar Hadiah (opsional)</Label>
+                <div className="flex gap-2 items-center">
+                  <div className="flex-1">
+                    <Input value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })}
+                      placeholder="Masukkan URL atau unggah file..." className="bg-fun-beige border-border text-fun-dark-purple placeholder:text-fun-text/30 rounded-md text-xs truncate" />
+                  </div>
+                  <Label className="bg-fun-purple hover:bg-fun-purple/90 text-white rounded-xl h-10 px-3 flex items-center justify-center gap-1.5 cursor-pointer font-bold text-xs select-none flex-shrink-0">
+                    {uploadingImage ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Unggah...</>
+                    ) : (
+                      <><Upload className="w-3.5 h-3.5" /> Unggah</>
+                    )}
+                    <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" disabled={uploadingImage} />
+                  </Label>
+                </div>
               </div>
               <div className="flex gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1 border-border text-fun-text rounded-xl font-bold hover:bg-fun-beige">Batal</Button>

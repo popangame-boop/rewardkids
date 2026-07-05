@@ -31,7 +31,11 @@ export async function getPendingLedgers() {
   return data;
 }
 
-export async function submitMissionProof(missionId: string, proofImageUrl: string) {
+export async function submitMissionProof(
+  missionId: string,
+  proofImageUrl: string,
+  proofImageUrls: string[] = []
+) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
@@ -50,6 +54,8 @@ export async function submitMissionProof(missionId: string, proofImageUrl: strin
 
   if (!mission) throw new Error("Mission not found");
 
+  const finalProofImageUrl = proofImageUrl || (proofImageUrls.length > 0 ? proofImageUrls[0] : "");
+
   const { error } = await supabase.from("ledgers").insert({
     user_id: profile!.id,
     mission_id: missionId,
@@ -57,7 +63,8 @@ export async function submitMissionProof(missionId: string, proofImageUrl: strin
     points: mission.point_reward,
     description: `Selesai: ${mission.title}`,
     status: "pending",
-    proof_image_url: proofImageUrl,
+    proof_image_url: finalProofImageUrl,
+    proof_image_urls: proofImageUrls,
   });
 
   if (error) throw new Error(error.message);

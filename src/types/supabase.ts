@@ -68,6 +68,7 @@ export interface Ledger {
   description: string | null;
   status: TxStatus;
   proof_image_url: string | null;
+  proof_image_urls: string[] | null;
   rejection_reason: string | null;
   created_at: string;
   reviewed_at: string | null;

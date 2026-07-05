@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedProfile } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,19 +10,16 @@ import {
   TrendingUp,
   Target,
   Gift,
+  Settings,
 } from "lucide-react";
 import Link from "next/link";
+import { ResetDataButton } from "@/components/ResetDataButton";
 
 export default async function ParentDashboardPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { user, profile: parent } = await getCachedProfile();
+  if (!user || !parent) redirect("/login");
 
-  const { data: parent } = await supabase
-    .from("profiles")
-    .select("id, name")
-    .eq("auth_user_id", user.id)
-    .single();
+  const supabase = await createClient();
 
   // Fetch stats
   const [childrenRes, pendingRes, missionsRes, rewardsRes, recentLedgerRes] =
@@ -219,6 +216,22 @@ export default async function ParentDashboardPage() {
           )}
         </Card>
       </div>
+
+      {/* Settings / Reset Section */}
+      <Card className="bg-white border-border p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-fun-dark-purple font-black text-lg flex items-center gap-2">
+            <Settings className="w-5 h-5 text-fun-purple" />
+            Pengaturan & Pemeliharaan Data
+          </h2>
+          <p className="text-fun-text/60 text-sm mt-1 font-semibold">
+            Gunakan fitur ini untuk mereset seluruh data demo (misi, hadiah, dan riwayat) agar aplikasi siap digunakan anak Anda sekarang. Profil anak tetap aman.
+          </p>
+        </div>
+        <div className="flex-shrink-0">
+          <ResetDataButton />
+        </div>
+      </Card>
     </div>
   );
 }

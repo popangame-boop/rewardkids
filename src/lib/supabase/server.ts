@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 // Using 'any' for Database generic to avoid complex TypeScript issues with
 // custom RPC functions. Runtime type safety is maintained through our
@@ -45,3 +46,23 @@ export async function createAdminClient() {
     }
   );
 }
+
+export const getCachedSession = cache(async () => {
+  const supabase = await createClient();
+  return await supabase.auth.getUser();
+});
+
+export const getCachedProfile = cache(async () => {
+  const { data: { user } } = await getCachedSession();
+  if (!user) return { user: null, profile: null };
+
+  const supabase = await createClient();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("auth_user_id", user.id)
+    .single();
+
+  return { user, profile };
+});
+

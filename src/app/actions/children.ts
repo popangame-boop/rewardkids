@@ -81,3 +81,91 @@ export async function getChildBalance(childId: string) {
   if (error) throw new Error(error.message);
   return data as number;
 }
+
+export async function resetDemoData() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: parent } = await supabase
+    .from("profiles")
+    .select("id, role")
+    .eq("auth_user_id", user.id)
+    .single();
+
+  if (!parent || parent.role !== "parent") {
+    throw new Error("Unauthorized: Only parents can reset data");
+  }
+
+  // Get children profiles
+  const { data: children } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("parent_id", parent.id);
+
+  const childIds = children?.map((c) => c.id) || [];
+
+  // 1. Delete ledgers (history)
+  if (childIds.length > 0) {
+    const { error: ledgerError } = await supabase
+      .from("ledgers")
+      .delete()
+      .in("user_id", childIds);
+    if (ledgerError) throw new Error(ledgerError.message);
+  }
+
+  // Also clean up any ledgers reviewed by this parent (just in case)
+  const { error: ledgerReviewError } = await supabase
+    .from("ledgers")
+    .delete()
+    .eq("reviewed_by", parent.id);
+  if (ledgerReviewError) throw new Error(ledgerReviewError.message);
+
+  // 2. Delete notifications
+  if (childIds.length > 0) {
+    const { error: notifError } = await supabase
+      .from("notifications")
+      .delete()
+      .in("user_id", childIds);
+    if (notifError) throw new Error(notifError.message);
+  }
+  const { error: parentNotifError } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("user_id", parent.id);
+  if (parentNotifError) throw new Error(parentNotifError.message);
+
+  // 3. Delete rewards
+  const { error: rewardError } = await supabase
+    .from("rewards")
+    .delete()
+    .eq("created_by", parent.id);
+  if (rewardError) throw new Error(rewardError.message);
+
+  // 4. Delete missions
+  const { error: missionError } = await supabase
+    .from("missions")
+    .delete()
+    .eq("created_by", parent.id);
+  if (missionError) throw new Error(missionError.message);
+
+  // 5. Delete punishments
+  const { error: punishmentError } = await supabase
+    .from("punishments")
+    .delete()
+    .eq("created_by", parent.id);
+  if (punishmentError) throw new Error(punishmentError.message);
+
+  // Revalidate paths
+  revalidatePath("/parent/dashboard");
+  revalidatePath("/parent/children");
+  revalidatePath("/parent/missions");
+  revalidatePath("/parent/rewards");
+  revalidatePath("/parent/validations");
+  revalidatePath("/parent/punishments");
+  revalidatePath("/child/dashboard");
+  revalidatePath("/child/missions");
+  revalidatePath("/child/rewards");
+  revalidatePath("/child/history");
+}
+

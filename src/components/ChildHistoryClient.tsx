@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle, XCircle, Clock, Star, MessageSquare, Send, Loader2 } from "lucide-react";
+import { CheckCircle, XCircle, Clock, Star, MessageSquare, Send, Loader2, Image as ImageIcon } from "lucide-react";
 import { getComments, addComment } from "@/app/actions/comments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import Image from "next/image";
 
 type Ledger = {
   id: string;
@@ -15,6 +17,7 @@ type Ledger = {
   description: string | null;
   status: string;
   proof_image_url: string | null;
+  proof_image_urls: string[] | null;
   rejection_reason: string | null;
   created_at: string;
 };
@@ -25,6 +28,7 @@ interface ChildHistoryClientProps {
 
 export function ChildHistoryClient({ initialLedgers }: ChildHistoryClientProps) {
   const [ledgers, setLedgers] = useState<Ledger[]>(initialLedgers);
+  const [proofDialog, setProofDialog] = useState<string | null>(null);
 
   // Comments State
   const [comments, setComments] = useState<Record<string, any[]>>({});
@@ -133,6 +137,45 @@ export function ChildHistoryClient({ initialLedgers }: ChildHistoryClientProps) 
                           ❌ Catatan Orang Tua: {ledger.rejection_reason}
                         </p>
                       )}
+                      {/* Proof Images Display */}
+                      {ledger.proof_image_urls && ledger.proof_image_urls.length > 0 ? (
+                        <div className="grid grid-cols-5 gap-2 mt-3">
+                          {ledger.proof_image_urls.map((url, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => setProofDialog(url)}
+                              className="w-full aspect-square rounded-xl overflow-hidden bg-fun-beige border border-border relative hover:opacity-90 transition-opacity cursor-pointer group"
+                            >
+                              <Image
+                                src={url}
+                                alt={`Bukti tugas ${idx + 1}`}
+                                fill
+                                className="object-cover"
+                              />
+                              <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <ImageIcon className="w-4 h-4 text-white" />
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : ledger.proof_image_url ? (
+                        <div className="mt-3">
+                          <button
+                            onClick={() => setProofDialog(ledger.proof_image_url!)}
+                            className="w-24 h-24 rounded-xl overflow-hidden bg-fun-beige border border-border relative hover:opacity-90 transition-opacity cursor-pointer group"
+                          >
+                            <Image
+                              src={ledger.proof_image_url}
+                              alt="Bukti tugas"
+                              fill
+                              className="object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <ImageIcon className="w-4 h-4 text-white" />
+                            </div>
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -211,6 +254,17 @@ export function ChildHistoryClient({ initialLedgers }: ChildHistoryClientProps) 
           </div>
         </div>
       ))}
+
+      {/* Proof Image Dialog */}
+      <Dialog open={!!proofDialog} onOpenChange={() => setProofDialog(null)}>
+        <DialogContent className="bg-white border-border rounded-[2.2rem] max-w-lg p-2 shadow-2xl">
+          {proofDialog && (
+            <div className="relative w-full aspect-square rounded-[1.8rem] overflow-hidden">
+              <Image src={proofDialog} alt="Bukti tugas" fill className="object-contain" />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -44,24 +44,37 @@ export async function updateSession(request: NextRequest) {
   if (!user && (isParentRoute || isChildRoute)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    redirectResponse.cookies.delete("user-role");
+    return redirectResponse;
   }
 
   // User logged in — redirect from auth routes to appropriate dashboard
   if (user) {
-    // Get profile role
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("auth_user_id", user.id)
-      .single();
+    let role = request.cookies.get("user-role")?.value;
+    let profileFetched = false;
 
-    if (!profile) {
+    if (!role) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("auth_user_id", user.id)
+        .single();
+      role = profile?.role;
+      profileFetched = true;
+
+      if (role) {
+        supabaseResponse.cookies.set("user-role", role, { path: "/", maxAge: 60 * 60 * 24 * 30 }); // 30 days
+      }
+    }
+
+    if (!role) {
       // User has session but no profile (e.g. deleted profile). Sign out to clear cookies/session.
       await supabase.auth.signOut();
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       const redirectResponse = NextResponse.redirect(url);
+      redirectResponse.cookies.delete("user-role");
       
       // Copy cookies from supabaseResponse (which contains the cleared session cookies from signOut)
       supabaseResponse.cookies.getAll().forEach((cookie) => {
@@ -72,22 +85,34 @@ export async function updateSession(request: NextRequest) {
 
     if (isAuthRoute) {
       const url = request.nextUrl.clone();
-      url.pathname = profile.role === "parent" ? "/parent/dashboard" : "/child/dashboard";
-      return NextResponse.redirect(url);
+      url.pathname = role === "parent" ? "/parent/dashboard" : "/child/dashboard";
+      const redirectResponse = NextResponse.redirect(url);
+      if (profileFetched) {
+        redirectResponse.cookies.set("user-role", role, { path: "/", maxAge: 60 * 60 * 24 * 30 });
+      }
+      return redirectResponse;
     }
 
     // Role-based route protection
     if (isParentRoute || isChildRoute) {
-      if (profile.role === "child" && isParentRoute) {
+      if (role === "child" && isParentRoute) {
         const url = request.nextUrl.clone();
         url.pathname = "/child/dashboard";
-        return NextResponse.redirect(url);
+        const redirectResponse = NextResponse.redirect(url);
+        if (profileFetched) {
+          redirectResponse.cookies.set("user-role", role, { path: "/", maxAge: 60 * 60 * 24 * 30 });
+        }
+        return redirectResponse;
       }
 
-      if (profile.role === "parent" && isChildRoute) {
+      if (role === "parent" && isChildRoute) {
         const url = request.nextUrl.clone();
         url.pathname = "/parent/dashboard";
-        return NextResponse.redirect(url);
+        const redirectResponse = NextResponse.redirect(url);
+        if (profileFetched) {
+          redirectResponse.cookies.set("user-role", role, { path: "/", maxAge: 60 * 60 * 24 * 30 });
+        }
+        return redirectResponse;
       }
     }
   }

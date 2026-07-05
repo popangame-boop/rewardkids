@@ -65,3 +65,8 @@ CREATE POLICY "notifications_update_own" ON public.notifications
 DROP POLICY IF EXISTS "notifications_insert_all" ON public.notifications;
 CREATE POLICY "notifications_insert_all" ON public.notifications
     FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+
+-- ============================================================
+-- 3. Column: proof_image_urls in ledgers
+-- ============================================================
+ALTER TABLE public.ledgers ADD COLUMN IF NOT EXISTS proof_image_urls TEXT[] DEFAULT '{}';
