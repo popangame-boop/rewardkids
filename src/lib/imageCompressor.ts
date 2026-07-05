@@ -1,5 +1,6 @@
 /**
  * Compresses an image file and converts it to WebP format.
+ * Supports all standard formats as well as HEIC/HEIF (converts them first).
  * @param file The original image File.
  * @param quality Compression quality from 0 to 1 (default: 0.8).
  * @param maxWidth Max width in pixels (default: 1200).
@@ -11,9 +12,42 @@ export async function compressToWebP(
   maxWidth = 1200,
   maxHeight = 1200
 ): Promise<File> {
+  let fileToProcess = file;
+
+  // Check if file is HEIC or HEIF
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  const isHeic =
+    extension === "heic" ||
+    extension === "heif" ||
+    file.type === "image/heic" ||
+    file.type === "image/heif";
+
+  if (isHeic) {
+    try {
+      const heic2anyModule = await import("heic2any");
+      // heic2any might export directly or as default depending on build environment
+      const heic2any = heic2anyModule.default || heic2anyModule;
+      
+      const convertedBlob = await heic2any({
+        blob: file,
+        toType: "image/jpeg",
+        quality: 0.9,
+      });
+
+      const jpegBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+      const newName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+      fileToProcess = new File([jpegBlob], newName, {
+        type: "image/jpeg",
+        lastModified: Date.now(),
+      });
+    } catch (error) {
+      console.error("Failed to convert HEIC/HEIF image, falling back to standard loading:", error);
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(fileToProcess);
     reader.onload = (event) => {
       const img = new Image();
       img.src = event.target?.result as string;
@@ -64,7 +98,7 @@ export async function compressToWebP(
           quality
         );
       };
-      img.onerror = (err) => reject(err);
+      img.onerror = (err) => reject(new Error("Gagal membaca file gambar. Pastikan format file valid."));
     };
     reader.onerror = (err) => reject(err);
   });

@@ -195,7 +195,7 @@ export function RewardsParentClient({ initialRewards }: RewardsParentClientProps
                     ) : (
                       <><Upload className="w-3.5 h-3.5" /> Unggah</>
                     )}
-                    <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" disabled={uploadingImage} />
+                    <input type="file" accept="image/*,image/heic,image/heif,.heic,.heif" onChange={handleImageUpload} className="hidden" disabled={uploadingImage} />
                   </Label>
                 </div>
               </div>

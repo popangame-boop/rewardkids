@@ -182,7 +182,7 @@ export function ChildMissionsClient({ missions, pendingMissionIds, childId }: Ch
             {/* Photo upload */}
             <div>
               <p className="text-fun-dark-purple text-sm font-black mb-2 text-center font-bold">Upload Foto Bukti 📸 (Maks 5)</p>
-              <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileSelect} className="hidden" />
+              <input ref={fileInputRef} type="file" accept="image/*,image/heic,image/heif,.heic,.heif" multiple onChange={handleFileSelect} className="hidden" />
               
               <div className="grid grid-cols-3 gap-2">
                 {previewUrls.map((url, index) => (
