@@ -169,3 +169,52 @@ export async function resetDemoData() {
   revalidatePath("/child/history");
 }
 
+export async function resetChildActivity(childId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: parent } = await supabase
+    .from("profiles")
+    .select("id, role")
+    .eq("auth_user_id", user.id)
+    .single();
+
+  if (!parent || parent.role !== "parent") {
+    throw new Error("Unauthorized");
+  }
+
+  // Ensure this child belongs to the parent
+  const { data: child } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", childId)
+    .eq("parent_id", parent.id)
+    .single();
+
+  if (!child) {
+    throw new Error("Child not found or unauthorized");
+  }
+
+  // Delete all ledgers for this child
+  const { error: ledgerError } = await supabase
+    .from("ledgers")
+    .delete()
+    .eq("user_id", childId);
+  if (ledgerError) throw new Error(ledgerError.message);
+
+  // Delete all notifications for this child
+  const { error: notifError } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("user_id", childId);
+  if (notifError) throw new Error(notifError.message);
+
+  // Revalidate paths
+  revalidatePath("/parent/dashboard");
+  revalidatePath("/parent/children");
+  revalidatePath("/child/dashboard");
+  revalidatePath("/child/history");
+}
+
+

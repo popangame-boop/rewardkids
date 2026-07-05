@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createChildAccount } from "@/app/actions/children";
+import { createChildAccount, resetChildActivity } from "@/app/actions/children";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,8 +12,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Plus, Star, Users, Eye, EyeOff } from "lucide-react";
+import { Plus, Star, Users, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { Profile } from "@/types/supabase";
 
 type ChildWithBalance = Profile & { balance: number };
@@ -26,10 +37,24 @@ export function ChildrenClient({ initialChildren }: ChildrenClientProps) {
   const [children, setChildren] = useState(initialChildren);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resettingId, setResettingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     pin: "",
   });
+
+  const handleResetActivity = async (childId: string, childName: string) => {
+    setResettingId(childId);
+    try {
+      await resetChildActivity(childId);
+      toast.success(`Aktivitas dan poin ${childName} berhasil direset ke 0! 🎉`);
+      window.location.reload();
+    } catch (error) {
+      toast.error("Gagal mereset aktivitas: " + String(error));
+    } finally {
+      setResettingId(null);
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,6 +172,47 @@ export function ChildrenClient({ initialChildren }: ChildrenClientProps) {
               <p className="text-fun-text/40 text-[10px] mt-3 font-bold uppercase tracking-wider">
                 Bergabung {new Date(child.created_at).toLocaleDateString("id-ID")}
               </p>
+
+              {/* Reset Activity Button */}
+              <div className="mt-4 w-full pt-4 border-t border-border/60">
+                <AlertDialog>
+                  <AlertDialogTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl font-bold gap-1.5 text-xs py-1.5 cursor-pointer"
+                        disabled={resettingId !== null}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Reset Aktivitas & Poin
+                      </Button>
+                    }
+                  />
+                  <AlertDialogContent className="bg-white border-border text-fun-text rounded-3xl max-w-sm mx-auto shadow-2xl p-6">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="text-fun-dark-purple font-black text-lg text-left">
+                        Reset Aktivitas {child.name}?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription className="text-fun-text/70 mt-2 font-semibold text-left">
+                        Tindakan ini akan menghapus semua riwayat transaksi/aktivitas untuk <strong className="text-fun-purple">{child.name}</strong> dan mereset poinnya menjadi <strong className="text-red-500">0</strong>.
+                        <span className="block mt-2 text-fun-dark-purple font-bold">Akun profil anak tidak akan terhapus.</span>
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter className="mt-5 flex flex-row items-center justify-end gap-2">
+                      <AlertDialogCancel className="border-border rounded-xl font-bold text-fun-text hover:bg-fun-beige mt-0 cursor-pointer">
+                        Batal
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleResetActivity(child.id, child.name)}
+                        className="bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl cursor-pointer"
+                      >
+                        Reset
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </div>
           ))}
         </div>
