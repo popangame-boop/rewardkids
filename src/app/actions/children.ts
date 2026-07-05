@@ -105,9 +105,11 @@ export async function resetDemoData() {
 
   const childIds = children?.map((c) => c.id) || [];
 
+  const adminSupabase = await createAdminClient();
+
   // 1. Delete ledgers (history)
   if (childIds.length > 0) {
-    const { error: ledgerError } = await supabase
+    const { error: ledgerError } = await adminSupabase
       .from("ledgers")
       .delete()
       .in("user_id", childIds);
@@ -115,7 +117,7 @@ export async function resetDemoData() {
   }
 
   // Also clean up any ledgers reviewed by this parent (just in case)
-  const { error: ledgerReviewError } = await supabase
+  const { error: ledgerReviewError } = await adminSupabase
     .from("ledgers")
     .delete()
     .eq("reviewed_by", parent.id);
@@ -123,34 +125,34 @@ export async function resetDemoData() {
 
   // 2. Delete notifications
   if (childIds.length > 0) {
-    const { error: notifError } = await supabase
+    const { error: notifError } = await adminSupabase
       .from("notifications")
       .delete()
       .in("user_id", childIds);
     if (notifError) throw new Error(notifError.message);
   }
-  const { error: parentNotifError } = await supabase
+  const { error: parentNotifError } = await adminSupabase
     .from("notifications")
     .delete()
     .eq("user_id", parent.id);
   if (parentNotifError) throw new Error(parentNotifError.message);
 
   // 3. Delete rewards
-  const { error: rewardError } = await supabase
+  const { error: rewardError } = await adminSupabase
     .from("rewards")
     .delete()
     .eq("created_by", parent.id);
   if (rewardError) throw new Error(rewardError.message);
 
   // 4. Delete missions
-  const { error: missionError } = await supabase
+  const { error: missionError } = await adminSupabase
     .from("missions")
     .delete()
     .eq("created_by", parent.id);
   if (missionError) throw new Error(missionError.message);
 
   // 5. Delete punishments
-  const { error: punishmentError } = await supabase
+  const { error: punishmentError } = await adminSupabase
     .from("punishments")
     .delete()
     .eq("created_by", parent.id);
@@ -196,15 +198,17 @@ export async function resetChildActivity(childId: string) {
     throw new Error("Child not found or unauthorized");
   }
 
+  const adminSupabase = await createAdminClient();
+
   // Delete all ledgers for this child
-  const { error: ledgerError } = await supabase
+  const { error: ledgerError } = await adminSupabase
     .from("ledgers")
     .delete()
     .eq("user_id", childId);
   if (ledgerError) throw new Error(ledgerError.message);
 
   // Delete all notifications for this child
-  const { error: notifError } = await supabase
+  const { error: notifError } = await adminSupabase
     .from("notifications")
     .delete()
     .eq("user_id", childId);
