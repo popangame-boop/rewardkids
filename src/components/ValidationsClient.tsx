@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { CheckCircle, XCircle, Image as ImageIcon, Star, Clock, MessageSquare, Send, Loader2 } from "lucide-react";
 import Image from "next/image";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type LedgerWithProfile = {
   id: string;
@@ -44,7 +45,7 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
   // Sync validation queue using SWR
-  const { data: ledgers = initialLedgers, mutate: mutateLedgers } = useSWR<LedgerWithProfile[]>(
+  const { data: ledgers = initialLedgers, mutate: mutateLedgers, isLoading } = useSWR<LedgerWithProfile[]>(
     "validationLedgers",
     async () => {
       const { data, error } = await supabase
@@ -61,6 +62,8 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
       revalidateOnReconnect: true,
     }
   );
+
+
 
   // Sync validation queue in real-time
   useEffect(() => {
@@ -245,6 +248,36 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
       minute: "2-digit",
     });
   };
+
+  if (isLoading && initialLedgers.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-64 rounded-xl" />
+          <Skeleton className="h-4 w-96 rounded-xl" />
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="bg-white border border-border rounded-[1.8rem] p-5 space-y-4 shadow-sm animate-pulse">
+              <div className="flex items-center gap-3">
+                <Skeleton className="w-10 h-10 rounded-full" />
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-24 rounded" />
+                  <Skeleton className="h-3 w-16 rounded" />
+                </div>
+              </div>
+              <Skeleton className="h-4 w-full rounded" />
+              <Skeleton className="h-4 w-5/6 rounded" />
+              <div className="flex justify-between items-center pt-2">
+                <Skeleton className="h-8 w-24 rounded-lg" />
+                <Skeleton className="h-8 w-24 rounded-lg" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

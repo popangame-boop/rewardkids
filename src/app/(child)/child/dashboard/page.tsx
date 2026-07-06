@@ -1,36 +1,16 @@
-import { createClient } from "@/lib/supabase/server";
+import { getCachedProfile } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { ChildDashboardClient } from "@/components/ChildDashboardClient";
 
 export default async function ChildDashboardPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, name")
-    .eq("auth_user_id", user.id)
-    .single();
-
-  if (!profile) redirect("/login");
-
-  const [balanceRes, activeMissionsRes, recentLedgersRes] = await Promise.all([
-    supabase.rpc("get_child_balance", { p_user_id: profile.id }),
-    supabase.from("missions").select("*").eq("is_active", true).order("created_at", { ascending: false }),
-    supabase
-      .from("ledgers")
-      .select("*")
-      .eq("user_id", profile.id)
-      .order("created_at", { ascending: false })
-      .limit(5),
-  ]);
+  const { user, profile } = await getCachedProfile();
+  if (!user || !profile) redirect("/login");
 
   return (
     <ChildDashboardClient
-      initialBalance={balanceRes.data ?? 0}
-      initialActiveMissions={activeMissionsRes.data ?? []}
-      initialRecentLedgers={recentLedgersRes.data ?? []}
+      initialBalance={0}
+      initialActiveMissions={[]}
+      initialRecentLedgers={[]}
       childId={profile.id}
       childName={profile.name}
     />

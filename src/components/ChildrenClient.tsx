@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import useSWR from "swr";
 import { createChildAccount, resetChildActivity } from "@/app/actions/children";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
 import {
   Dialog,
@@ -45,6 +47,36 @@ export function ChildrenClient({ initialChildren, parentId }: ChildrenClientProp
     name: "",
     pin: "",
   });
+
+  const { data: swrChildren, isLoading } = useSWR<ChildWithBalance[]>(
+    ["parentChildrenData", parentId],
+    async () => {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("role", "child")
+        .eq("parent_id", parentId)
+        .order("created_at", { ascending: true });
+      if (!profiles) return [];
+      const childrenWithBal = await Promise.all(
+        profiles.map(async (child) => {
+          const { data: balance } = await supabase.rpc("get_child_balance", {
+            p_user_id: child.id,
+          });
+          return { ...child, balance: balance ?? 0 } as ChildWithBalance;
+        })
+      );
+      return childrenWithBal;
+    }
+  );
+
+  useEffect(() => {
+    if (swrChildren) {
+      setChildren(swrChildren);
+    }
+  }, [swrChildren]);
+
+
 
   // Sync children profiles and balances in real-time
   useEffect(() => {
@@ -173,6 +205,33 @@ export function ChildrenClient({ initialChildren, parentId }: ChildrenClientProp
     "from-green-500 to-emerald-600",
     "from-amber-500 to-orange-600",
   ];
+
+  if (isLoading && children.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-64 rounded-xl" />
+            <Skeleton className="h-4 w-96 rounded-xl" />
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-white border border-border rounded-[2.2rem] p-6 space-y-4 shadow-sm">
+              <div className="flex items-center gap-4">
+                <Skeleton className="w-16 h-16 rounded-2xl animate-pulse" />
+                <div className="space-y-2">
+                  <Skeleton className="h-5 w-32 rounded animate-pulse" />
+                  <Skeleton className="h-3.5 w-24 rounded animate-pulse" />
+                </div>
+              </div>
+              <Skeleton className="h-12 w-full rounded-2xl animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

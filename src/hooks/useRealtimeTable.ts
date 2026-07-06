@@ -114,5 +114,7 @@ export function useRealtimeTable<T extends { id: string }>(
     }
   };
 
-  return [data, setData] as const;
+  const isLoading = !swrData;
+
+  return [data, setData, isLoading] as const;
 }

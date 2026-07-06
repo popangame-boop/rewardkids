@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import useSWR from "swr";
+import { Skeleton } from "@/components/ui/skeleton";
 import { addPunishment } from "@/app/actions/ledgers";
 import { createPunishment, updatePunishment, deletePunishment } from "@/app/actions/punishments";
 import { Punishment as PredefinedPunishment } from "@/types/supabase";
@@ -44,24 +46,60 @@ type PunishmentHistory = {
 const ICONS = ["⚡", "⚠️", "💤", "📱", "🎮", "📺", "🗑️", "📢", "😡", "❌", "👊", "🛑"];
 
 interface PunishmentsClientProps {
-  children: Child[];
-  recentPunishments: PunishmentHistory[];
-  predefinedPunishments: PredefinedPunishment[];
+  parentId: string;
+  initialChildren: Child[];
+  initialRecentPunishments: PunishmentHistory[];
+  initialPredefinedPunishments: PredefinedPunishment[];
 }
 
 export function PunishmentsClient({
-  children,
-  recentPunishments,
-  predefinedPunishments,
+  parentId,
+  initialChildren,
+  initialRecentPunishments,
+  initialPredefinedPunishments,
 }: PunishmentsClientProps) {
   const supabase = createClient();
   const [activeTab, setActiveTab] = useState<"apply" | "manage">("apply");
 
   // Sync templates in real-time
-  const [templates, setTemplates] = useRealtimeTable<PredefinedPunishment>("punishments", predefinedPunishments);
+  const [templates, setTemplates, templatesLoading] = useRealtimeTable<PredefinedPunishment>("punishments", initialPredefinedPunishments);
 
-  // Sync punishments in real-time
-  const [punishments, setPunishments] = useState<PunishmentHistory[]>(recentPunishments);
+  // Sync children profiles client-side
+  const { data: children = initialChildren, isLoading: childrenLoading } = useSWR<Child[]>(
+    ["parentPunishmentsChildren", parentId],
+    async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, name")
+        .eq("role", "child")
+        .eq("parent_id", parentId);
+      return data || [];
+    }
+  );
+
+  // Sync recent punishments client-side
+  const { data: punishmentsData, mutate: mutatePunishments, isLoading: punishmentsLoading } = useSWR<PunishmentHistory[]>(
+    ["parentRecentPunishments", parentId],
+    async () => {
+      const { data } = await supabase
+        .from("ledgers")
+        .select("*, profiles!ledgers_user_id_fkey(name)")
+        .eq("type", "punish")
+        .order("created_at", { ascending: false })
+        .limit(10);
+      return (data as any) || [];
+    }
+  );
+
+  const [punishments, setPunishments] = useState<PunishmentHistory[]>(initialRecentPunishments);
+
+  useEffect(() => {
+    if (punishmentsData) {
+      setPunishments(punishmentsData);
+    }
+  }, [punishmentsData]);
+
+
 
   useEffect(() => {
     const fetchRecentPunishment = async (id: string): Promise<PunishmentHistory | null> => {
@@ -282,6 +320,24 @@ export function PunishmentsClient({
     }
     setLoadingApply(false);
   };
+
+  const isCurrentlyLoading = (childrenLoading && children.length === 0) || (punishmentsLoading && punishments.length === 0) || (templatesLoading && templates.length === 0);
+
+  if (isCurrentlyLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-64 rounded-xl" />
+          <Skeleton className="h-4 w-96 rounded-xl" />
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-48 rounded-[2.2rem]" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

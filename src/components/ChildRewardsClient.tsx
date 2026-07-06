@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { Star, Gift, Package, Loader2, Lock } from "lucide-react";
 import Image from "next/image";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface ChildRewardsClientProps {
   rewards: Reward[];
@@ -33,10 +34,14 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
   const [loading, setLoading] = useState(false);
 
   // Sync rewards in real-time
-  const [rewards] = useRealtimeTable<Reward>("rewards", initialRewards);
+  const [rewards, , rewardsLoading] = useRealtimeTable<Reward>(
+    "rewards",
+    initialRewards,
+    { filter: "is_active=eq.true" }
+  );
 
   // Sync child balance using SWR
-  const { data: balance = initialBalance, mutate: mutateBalance } = useSWR<number>(
+  const { data: balance = initialBalance, mutate: mutateBalance, isLoading: balanceLoading } = useSWR<number>(
     ["balance", childId],
     async () => {
       const { data, error } = await supabase.rpc("get_child_balance", { p_user_id: childId });
@@ -95,6 +100,34 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
   };
 
   const canAfford = (reward: Reward) => balance >= reward.point_cost;
+
+  const isCurrentlyLoading = (rewardsLoading && initialRewards.length === 0) || (balanceLoading && initialBalance === 0);
+
+  if (isCurrentlyLoading) {
+    return (
+      <div className="px-4 pt-6 pb-2 space-y-6 max-w-lg mx-auto">
+        <div className="space-y-2 animate-pulse">
+          <Skeleton className="h-9 w-64 rounded-xl" />
+          <Skeleton className="h-4 w-96 rounded-xl" />
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-pulse">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="bg-white border border-border rounded-[1.8rem] p-5 space-y-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <Skeleton className="w-12 h-12 rounded-2xl" />
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32 rounded" />
+                  <Skeleton className="h-3 w-20 rounded" />
+                </div>
+              </div>
+              <Skeleton className="h-4 w-full rounded" />
+              <Skeleton className="h-4 w-5/6 rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pt-6 pb-2 space-y-6 max-w-lg mx-auto">

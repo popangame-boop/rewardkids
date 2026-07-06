@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { compressToWebP } from "@/lib/imageCompressor";
 import Image from "next/image";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Pencil, Trash2, Star, Gift, Package, ToggleLeft, ToggleRight, Upload, Loader2 } from "lucide-react";
 
 interface RewardsParentClientProps {
@@ -38,10 +39,12 @@ interface RewardsParentClientProps {
 }
 
 export function RewardsParentClient({ initialRewards }: RewardsParentClientProps) {
-  const [rewards, setRewards] = useRealtimeTable<Reward>("rewards", initialRewards);
+  const [rewards, setRewards, isLoading] = useRealtimeTable<Reward>("rewards", initialRewards);
   const [open, setOpen] = useState(false);
   const [editingReward, setEditingReward] = useState<Reward | null>(null);
   const [loading, setLoading] = useState(false);
+
+
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -168,6 +171,40 @@ export function RewardsParentClient({ initialRewards }: RewardsParentClientProps
       toast.error("Gagal menghapus hadiah: " + String(error));
     }
   };
+
+  if (isLoading && initialRewards.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-64 rounded-xl" />
+            <Skeleton className="h-4 w-96 rounded-xl" />
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="bg-white border border-border rounded-[1.8rem] p-5 space-y-4 shadow-sm">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="w-12 h-12 rounded-2xl animate-pulse" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-32 rounded animate-pulse" />
+                    <Skeleton className="h-3 w-20 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+              <Skeleton className="h-4 w-full rounded animate-pulse" />
+              <Skeleton className="h-4 w-5/6 rounded animate-pulse" />
+              <div className="flex items-center justify-between border-t border-border/60 pt-3">
+                <Skeleton className="h-6 w-16 rounded-full animate-pulse" />
+                <Skeleton className="h-6 w-16 rounded-lg animate-pulse" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

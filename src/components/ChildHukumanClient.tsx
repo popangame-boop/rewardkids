@@ -7,6 +7,7 @@ import { Star, ShieldAlert, AlertTriangle, HelpCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { createClient } from "@/lib/supabase/client";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface ChildHukumanClientProps {
   punishments: Punishment[];
@@ -19,10 +20,14 @@ export function ChildHukumanClient({ punishments: initialPunishments, ledgers: i
   const [selectedPunishment, setSelectedPunishment] = useState<Punishment | null>(null);
 
   // Sync punishments in real-time
-  const [punishments] = useRealtimeTable<Punishment>("punishments", initialPunishments);
+  const [punishments, , punishmentsLoading] = useRealtimeTable<Punishment>(
+    "punishments",
+    initialPunishments,
+    { filter: "is_active=eq.true" }
+  );
 
   // Sync punishment ledgers using SWR
-  const { data: ledgers = initialLedgers, mutate: mutateLedgers } = useSWR<Ledger[]>(
+  const { data: ledgers = initialLedgers, mutate: mutateLedgers, isLoading: ledgersLoading } = useSWR<Ledger[]>(
     ["hukumanLedgers", childId],
     async () => {
       const { data, error } = await supabase
@@ -40,6 +45,8 @@ export function ChildHukumanClient({ punishments: initialPunishments, ledgers: i
       revalidateOnReconnect: true,
     }
   );
+
+
 
   useEffect(() => {
     const channel = supabase
@@ -71,6 +78,24 @@ export function ChildHukumanClient({ punishments: initialPunishments, ledgers: i
   // Helper to calculate total points deducted
   const totalDeducted = ledgers.reduce((sum, l) => sum + l.points, 0);
   const totalTimes = ledgers.length;
+
+  const isCurrentlyLoading = (punishmentsLoading && initialPunishments.length === 0) || (ledgersLoading && initialLedgers.length === 0);
+
+  if (isCurrentlyLoading) {
+    return (
+      <div className="px-4 pt-6 pb-2 space-y-6 max-w-lg mx-auto">
+        <div className="space-y-2 animate-pulse">
+          <Skeleton className="h-9 w-64 rounded-xl" />
+          <Skeleton className="h-4 w-96 rounded-xl" />
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-pulse">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-44 rounded-[1.8rem]" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pt-6 pb-2 space-y-6 max-w-lg mx-auto">

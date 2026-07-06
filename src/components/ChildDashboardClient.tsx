@@ -7,6 +7,7 @@ import { Star, Target, Clock, CheckCircle, XCircle, ChevronRight } from "lucide-
 import Link from "next/link";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { createClient } from "@/lib/supabase/client";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface ChildDashboardClientProps {
   initialBalance: number;
@@ -26,7 +27,7 @@ export function ChildDashboardClient({
   const supabase = createClient();
 
   // Sync balance using SWR
-  const { data: balance = initialBalance, mutate: mutateBalance } = useSWR<number>(
+  const { data: balance = initialBalance, mutate: mutateBalance, isLoading: balanceLoading } = useSWR<number>(
     ["balance", childId],
     async () => {
       const { data, error } = await supabase.rpc("get_child_balance", { p_user_id: childId });
@@ -41,7 +42,7 @@ export function ChildDashboardClient({
   );
 
   // Sync recent ledgers using SWR
-  const { data: recentLedgers = initialRecentLedgers, mutate: mutateLedgers } = useSWR<Ledger[]>(
+  const { data: recentLedgers = initialRecentLedgers, mutate: mutateLedgers, isLoading: ledgersLoading } = useSWR<Ledger[]>(
     ["recentLedgers", childId],
     async () => {
       const { data, error } = await supabase
@@ -61,7 +62,13 @@ export function ChildDashboardClient({
   );
 
   // Sync active missions in real-time
-  const [activeMissions] = useRealtimeTable<Mission>("missions", initialActiveMissions);
+  const [activeMissions, , activeMissionsLoading] = useRealtimeTable<Mission>(
+    "missions",
+    initialActiveMissions,
+    { filter: "is_active=eq.true" }
+  );
+
+
 
   // Sync balance and ledger events in real-time
   useEffect(() => {
@@ -104,6 +111,24 @@ export function ChildDashboardClient({
   };
 
   const typeEmoji = { earn: "🎯", spend: "🎁", punish: "⚡" };
+
+  const isCurrentlyLoading = (balanceLoading && initialBalance === 0) || (ledgersLoading && recentLedgers.length === 0) || (activeMissionsLoading && activeMissions.length === 0);
+
+  if (isCurrentlyLoading) {
+    return (
+      <div className="space-y-6 max-w-lg mx-auto px-4 pt-6">
+        <div className="space-y-2 animate-pulse">
+          <Skeleton className="h-9 w-64 rounded-xl" />
+          <Skeleton className="h-4 w-96 rounded-xl" />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-pulse">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-28 rounded-[1.8rem]" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pt-6 space-y-6 max-w-lg mx-auto pb-12">
