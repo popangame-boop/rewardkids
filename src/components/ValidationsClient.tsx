@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useOptimistic, useTransition } from "react";
 import useSWR from "swr";
 import { approveLedger, rejectLedger } from "@/app/actions/ledgers";
 import { getComments, addComment } from "@/app/actions/comments";
@@ -42,7 +42,7 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
   const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [proofDialog, setProofDialog] = useState<string | null>(null);
-  const [loading, setLoading] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   // Sync validation queue using SWR
   const { data: ledgers = initialLedgers, mutate: mutateLedgers, isLoading } = useSWR<LedgerWithProfile[]>(
@@ -63,7 +63,11 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
     }
   );
 
-
+  // React 19 useOptimistic for Zero-Latency approval/rejection validation queue
+  const [optimisticLedgers, setOptimisticLedgers] = useOptimistic(
+    ledgers,
+    (state, idToRemove: string) => state.filter((l) => l.id !== idToRemove)
+  );
 
   // Sync validation queue in real-time
   useEffect(() => {
@@ -195,19 +199,17 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
   };
 
   const handleApprove = async (id: string) => {
-    const previousLedgers = ledgers;
-    
-    // Optimistic Update: Instantly filter out approved item from UI list
-    mutateLedgers((prev) => (prev || []).filter((l) => l.id !== id), false);
     toast.success("Tugas disetujui! ✅");
 
-    try {
-      await approveLedger(id);
-    } catch (error) {
-      // Revert Optimistic Update
-      mutateLedgers(previousLedgers, false);
-      toast.error("Gagal menyetujui tugas: " + String(error));
-    }
+    startTransition(async () => {
+      setOptimisticLedgers(id);
+      try {
+        await approveLedger(id);
+        await mutateLedgers();
+      } catch (error) {
+        toast.error("Gagal menyetujui tugas: " + String(error));
+      }
+    });
   };
 
   const openReject = (id: string) => {
@@ -219,20 +221,18 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
   const handleReject = async () => {
     if (!selectedLedgerId) return;
     const id = selectedLedgerId;
-    const previousLedgers = ledgers;
-
-    // Optimistic Update: Instantly filter out rejected item and close modal
-    mutateLedgers((prev) => (prev || []).filter((l) => l.id !== id), false);
     setRejectDialogOpen(false);
     toast.success("Tugas ditolak");
 
-    try {
-      await rejectLedger(id, rejectReason);
-    } catch (error) {
-      // Revert Optimistic Update
-      mutateLedgers(previousLedgers, false);
-      toast.error("Gagal menolak tugas: " + String(error));
-    }
+    startTransition(async () => {
+      setOptimisticLedgers(id);
+      try {
+        await rejectLedger(id, rejectReason);
+        await mutateLedgers();
+      } catch (error) {
+        toast.error("Gagal menolak tugas: " + String(error));
+      }
+    });
   };
 
   const typeLabels: Record<string, string> = {
@@ -284,13 +284,13 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
       <div>
         <h1 className="text-2xl lg:text-3xl font-black text-fun-dark-purple">Validasi Tugas ✅</h1>
         <p className="text-fun-text/60 text-sm mt-1 font-semibold">
-          {ledgers.length > 0
-            ? `${ledgers.length} tugas menunggu persetujuanmu`
+          {optimisticLedgers.length > 0
+            ? `${optimisticLedgers.length} tugas menunggu persetujuanmu`
             : "Semua tugas sudah divalidasi!"}
         </p>
       </div>
 
-      {ledgers.length === 0 ? (
+      {optimisticLedgers.length === 0 ? (
         <div className="text-center py-20 bg-white border border-border rounded-[2.2rem] shadow-sm">
           <CheckCircle className="w-16 h-16 text-fun-teal mx-auto mb-4 animate-bounce-slow" />
           <p className="text-fun-dark-purple font-black text-xl">Semua beres! 🎉</p>
@@ -298,7 +298,7 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {ledgers.map((ledger) => (
+          {optimisticLedgers.map((ledger) => (
             <div
               key={ledger.id}
               className="bg-white border border-border rounded-[1.8rem] p-5 space-y-4 hover:shadow-md transition-all shadow-sm flex flex-col justify-between"
@@ -418,7 +418,7 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
                         <Input
                           value={commentInputs[ledger.id] || ""}
                           onChange={(e) =>
-                            setCommentInputs((prev) => ({ ...prev, [ledger.id]: e.target.value }))
+                              setCommentInputs((prev) => ({ ...prev, [ledger.id]: e.target.value }))
                           }
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleSendComment(ledger.id);
@@ -450,7 +450,7 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
                 <div className="flex gap-2">
                   <Button
                     onClick={() => handleApprove(ledger.id)}
-                    disabled={loading === ledger.id}
+                    disabled={isPending}
                     className="flex-1 bg-fun-teal hover:bg-fun-teal/90 text-white font-black rounded-xl h-10 text-xs gap-1 border-none shadow-md shadow-fun-teal/10 cursor-pointer"
                   >
                     <CheckCircle className="w-4 h-4" />
@@ -458,7 +458,7 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
                   </Button>
                   <Button
                     onClick={() => openReject(ledger.id)}
-                    disabled={loading === ledger.id}
+                    disabled={isPending}
                     variant="outline"
                     className="flex-1 border-fun-pink text-fun-pink hover:bg-fun-pink/5 hover:border-fun-pink rounded-xl h-10 text-xs gap-1 font-bold cursor-pointer"
                   >

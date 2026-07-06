@@ -69,6 +69,8 @@ export function ParentSidebar({ pendingCount }: { pendingCount?: number }) {
               key={href}
               href={href}
               onClick={() => setMobileOpen(false)}
+              onPointerEnter={() => router.prefetch(href)}
+              onTouchStart={() => router.prefetch(href)}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 group",
                 isActive

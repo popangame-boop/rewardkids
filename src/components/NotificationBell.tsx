@@ -221,6 +221,8 @@ export function NotificationBell() {
                   <div
                     key={notif.id}
                     onClick={() => handleMarkAsRead(notif.id, notif.link)}
+                    onPointerEnter={() => notif.link && router.prefetch(notif.link)}
+                    onTouchStart={() => notif.link && router.prefetch(notif.link)}
                     className={`p-3.5 flex gap-3 transition-colors cursor-pointer hover:bg-fun-beige/35 ${
                       !notif.is_read ? "bg-fun-yellow/5 border-l-4 border-l-fun-yellow" : ""
                     }`}

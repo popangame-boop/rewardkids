@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useOptimistic, useTransition } from "react";
 import useSWR from "swr";
 import { Reward } from "@/types/supabase";
 import { redeemReward } from "@/app/actions/ledgers";
 import { Button } from "@/components/ui/button";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { createClient } from "@/lib/supabase/client";
+import { useAppStore } from "@/lib/store";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +32,9 @@ interface ChildRewardsClientProps {
 export function ChildRewardsClient({ rewards: initialRewards, balance: initialBalance, childId }: ChildRewardsClientProps) {
   const supabase = createClient();
   const [selectedReward, setSelectedReward] = useState<Reward | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  const { childBalances, setBalance, setRewards, rewards: storeRewards } = useAppStore();
 
   // Sync rewards in real-time
   const [rewards, , rewardsLoading] = useRealtimeTable<Reward>(
@@ -40,8 +43,15 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
     { filter: "is_active=eq.true" }
   );
 
+  // Cache rewards in Zustand store when loaded
+  useEffect(() => {
+    if (rewards) {
+      setRewards(rewards);
+    }
+  }, [rewards, setRewards]);
+
   // Sync child balance using SWR
-  const { data: balance = initialBalance, mutate: mutateBalance, isLoading: balanceLoading } = useSWR<number>(
+  const { data: swrBalance, mutate: mutateBalance, isLoading: balanceLoading } = useSWR<number>(
     ["balance", childId],
     async () => {
       const { data, error } = await supabase.rpc("get_child_balance", { p_user_id: childId });
@@ -49,11 +59,18 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
       return data !== null ? data : 0;
     },
     {
-      fallbackData: initialBalance,
+      fallbackData: childBalances[childId] ?? initialBalance,
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
     }
   );
+
+  // Sync SWR balance to Zustand
+  useEffect(() => {
+    if (swrBalance !== undefined) {
+      setBalance(childId, swrBalance);
+    }
+  }, [swrBalance, childId, setBalance]);
 
   // Sync child balance in real-time
   useEffect(() => {
@@ -78,30 +95,37 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
     };
   }, [childId, supabase, mutateBalance]);
 
+  // Retrieve current balance from store (or fallback to initialBalance/SWR balance)
+  const currentBalance = childBalances[childId] ?? swrBalance ?? initialBalance;
+
+  // React 19 useOptimistic for Zero-Latency balance deduction
+  const [optimisticBalance, setOptimisticBalance] = useOptimistic(
+    currentBalance,
+    (state, pointCost: number) => state - pointCost
+  );
+
   const handleRedeem = async () => {
     if (!selectedReward) return;
     const reward = selectedReward;
-    const previousBalance = balance;
-
-    // Optimistic Update: Deduct balance instantly and close dialog
-    mutateBalance((prev) => (prev !== undefined ? prev - reward.point_cost : previousBalance - reward.point_cost), false);
     setSelectedReward(null);
     toast.success(`Penukaran "${reward.title}" berhasil! 🎁\nMenunggu persetujuan orang tua.`);
 
-    setLoading(true);
-    try {
-      await redeemReward(reward.id);
-    } catch (error) {
-      // Revert Optimistic Update
-      mutateBalance(previousBalance, false);
-      toast.error("Gagal menukar hadiah: " + String(error));
-    }
-    setLoading(false);
+    startTransition(async () => {
+      setOptimisticBalance(reward.point_cost);
+      try {
+        await redeemReward(reward.id);
+        await mutateBalance();
+      } catch (error) {
+        toast.error("Gagal menukar hadiah: " + String(error));
+      }
+    });
   };
 
-  const canAfford = (reward: Reward) => balance >= reward.point_cost;
+  const canAfford = (reward: Reward) => optimisticBalance >= reward.point_cost;
 
-  const isCurrentlyLoading = (rewardsLoading && initialRewards.length === 0) || (balanceLoading && initialBalance === 0);
+  // If we already have cached rewards and balance in Zustand, skip showing skeleton
+  const hasCachedData = storeRewards !== null && childBalances[childId] !== undefined;
+  const isCurrentlyLoading = !hasCachedData && ((rewardsLoading && initialRewards.length === 0) || (balanceLoading && initialBalance === 0));
 
   if (isCurrentlyLoading) {
     return (
@@ -129,6 +153,8 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
     );
   }
 
+  const activeRewards = storeRewards || rewards;
+
   return (
     <div className="px-4 pt-6 pb-2 space-y-6 max-w-lg mx-auto">
       {/* Header + Balance */}
@@ -139,11 +165,11 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
         </div>
         <div className="flex items-center gap-1.5 bg-fun-yellow/20 border border-fun-yellow/30 rounded-2xl px-3 py-2 shadow-sm">
           <Star className="w-4 h-4 text-fun-yellow fill-fun-yellow" />
-          <span className="text-fun-purple font-black text-lg">{balance}</span>
+          <span className="text-fun-purple font-black text-lg">{optimisticBalance}</span>
         </div>
       </div>
 
-      {rewards.length === 0 ? (
+      {activeRewards.length === 0 ? (
         <div className="text-center py-20 bg-white rounded-3xl border border-border shadow-sm">
           <div className="text-6xl mb-4">🎁</div>
           <p className="text-fun-dark-purple font-extrabold">Belum ada hadiah</p>
@@ -151,7 +177,7 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3">
-          {rewards.map((reward) => {
+          {activeRewards.map((reward) => {
             const affordable = canAfford(reward);
             const outOfStock = reward.stock === 0;
             const disabled = !affordable || outOfStock;
@@ -208,7 +234,7 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
 
                   {!affordable && !outOfStock && (
                     <p className="text-fun-pink text-[10px] font-black uppercase tracking-wider mt-1">
-                      Kurang {reward.point_cost - balance} ⭐
+                      Kurang {reward.point_cost - optimisticBalance} ⭐
                     </p>
                   )}
                 </div>
@@ -238,7 +264,7 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
                   <span className="text-fun-purple font-black text-xl">{selectedReward?.point_cost}</span>
                   <span className="text-fun-purple/60 text-sm font-bold">poin</span>
                 </div>
-                <p className="text-fun-text/60 text-sm font-medium">Sisa poinmu nanti: {balance - (selectedReward?.point_cost ?? 0)} ⭐</p>
+                <p className="text-fun-text/60 text-sm font-medium">Sisa poinmu nanti: {optimisticBalance - (selectedReward?.point_cost ?? 0)} ⭐</p>
                 <p className="text-fun-text/40 text-xs font-bold bg-fun-beige p-2 rounded-xl">Penukaran ini akan dikonfirmasi oleh Orang Tua terlebih dahulu</p>
               </div>
             </AlertDialogDescription>
@@ -249,10 +275,10 @@ export function ChildRewardsClient({ rewards: initialRewards, balance: initialBa
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleRedeem}
-              disabled={loading}
+              disabled={isPending}
               className="flex-1 bg-fun-purple hover:bg-fun-purple/90 text-white font-black rounded-xl shadow-lg shadow-fun-purple/20 border-none"
             >
-              {loading ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Proses...</> : "Tukar! 🎉"}
+              {isPending ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Proses...</> : "Tukar! 🎉"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

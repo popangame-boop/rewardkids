@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Camera, Star, Upload, CheckCircle, Loader2, Clock } from "lucide-react";
 import Image from "next/image";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAppStore } from "@/lib/store";
 
 interface ChildMissionsClientProps {
   missions: Mission[];
@@ -33,12 +34,21 @@ export function ChildMissionsClient({ missions: initialMissions, pendingMissionI
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const { setMissions, missions: storeMissions } = useAppStore();
+
   // Sync missions in real-time
   const [missions, , missionsLoading] = useRealtimeTable<Mission>(
     "missions",
     initialMissions,
     { filter: "is_active=eq.true" }
   );
+
+  // Cache missions to Zustand store
+  useEffect(() => {
+    if (missions) {
+      setMissions(missions);
+    }
+  }, [missions, setMissions]);
 
   // Sync pending mission IDs using SWR
   const { data: pendingMissionList = [], mutate: mutatePending, isLoading: pendingLoading } = useSWR<string[]>(
@@ -102,7 +112,8 @@ export function ChildMissionsClient({ missions: initialMissions, pendingMissionI
     };
   }, [childId, supabase, mutatePending]);
 
-  const categories = [...new Set(missions.map((m) => m.category ?? "Umum"))];
+  const activeMissions = storeMissions || missions;
+  const categories = [...new Set(activeMissions.map((m) => m.category ?? "Umum"))];
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
@@ -170,7 +181,8 @@ export function ChildMissionsClient({ missions: initialMissions, pendingMissionI
     }
     setLoading(false);
   };
-  const isCurrentlyLoading = (missionsLoading && initialMissions.length === 0) || (pendingLoading && pendingMissionList.length === 0);
+  const hasCachedMissions = storeMissions !== null;
+  const isCurrentlyLoading = (!hasCachedMissions && missionsLoading && initialMissions.length === 0) || (pendingLoading && pendingMissionList.length === 0);
 
   if (isCurrentlyLoading) {
     return (
@@ -205,21 +217,22 @@ export function ChildMissionsClient({ missions: initialMissions, pendingMissionI
         <p className="text-fun-text/60 text-sm mt-1 font-medium">Selesaikan misi dan kumpulkan bintang!</p>
       </div>
 
-      {missions.length === 0 ? (
+      {activeMissions.length === 0 ? (
         <div className="text-center py-20 bg-white rounded-3xl border border-border shadow-sm">
-          <div className="text-6xl mb-4">🎯</div>
-          <p className="text-fun-dark-purple font-extrabold">Belum ada misi</p>
+          <p className="text-fun-dark-purple font-extrabold text-lg">Belum ada misi aktif</p>
           <p className="text-fun-text/40 text-sm font-semibold">Orang tua belum menambahkan misi</p>
         </div>
       ) : (
         <div className="space-y-6">
-          {categories.map((cat) => {
-            const catMissions = missions.filter((m) => (m.category ?? "Umum") === cat);
+          {categories.map((category) => {
+            const categoryMissions = activeMissions.filter(
+              (m) => (m.category ?? "Umum") === category
+            );
             return (
-              <div key={cat} className="space-y-3">
-                <h2 className="text-fun-purple font-black text-xs uppercase tracking-wider pl-1">{cat}</h2>
+              <div key={category} className="space-y-3">
+                <h2 className="text-fun-purple font-black text-xs uppercase tracking-wider pl-1">{category}</h2>
                 <div className="space-y-3">
-                  {catMissions.map((mission) => {
+                  {categoryMissions.map((mission) => {
                     const isPending = pendingIds.has(mission.id);
                     return (
                       <div

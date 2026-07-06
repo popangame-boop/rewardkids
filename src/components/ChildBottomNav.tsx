@@ -38,6 +38,8 @@ export function ChildBottomNav() {
               <Link
                 key={href}
                 href={href}
+                onPointerEnter={() => router.prefetch(href)}
+                onTouchStart={() => router.prefetch(href)}
                 className={cn(
                   "flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-2xl transition-all duration-200",
                   isActive

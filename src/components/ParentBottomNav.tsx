@@ -52,6 +52,8 @@ export function ParentBottomNav({ pendingCount }: ParentBottomNavProps) {
               <Link
                 key={href}
                 href={href}
+                onPointerEnter={() => router.prefetch(href)}
+                onTouchStart={() => router.prefetch(href)}
                 className={cn(
                   "flex-1 flex flex-col items-center gap-0.5 py-3 px-1 rounded-2xl transition-all duration-200",
                   isActive ? "text-fun-purple" : "text-fun-text/40 hover:text-fun-text/70"

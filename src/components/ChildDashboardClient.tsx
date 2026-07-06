@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { createClient } from "@/lib/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAppStore } from "@/lib/store";
 
 interface ChildDashboardClientProps {
   initialBalance: number;
@@ -26,8 +27,10 @@ export function ChildDashboardClient({
 }: ChildDashboardClientProps) {
   const supabase = createClient();
 
+  const { childBalances, setBalance, setMissions, missions: storeMissions } = useAppStore();
+
   // Sync balance using SWR
-  const { data: balance = initialBalance, mutate: mutateBalance, isLoading: balanceLoading } = useSWR<number>(
+  const { data: swrBalance, mutate: mutateBalance, isLoading: balanceLoading } = useSWR<number>(
     ["balance", childId],
     async () => {
       const { data, error } = await supabase.rpc("get_child_balance", { p_user_id: childId });
@@ -35,11 +38,19 @@ export function ChildDashboardClient({
       return data !== null ? data : 0;
     },
     {
-      fallbackData: initialBalance,
+      fallbackData: childBalances[childId] ?? initialBalance,
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
     }
   );
+
+  useEffect(() => {
+    if (swrBalance !== undefined) {
+      setBalance(childId, swrBalance);
+    }
+  }, [swrBalance, childId, setBalance]);
+
+  const balance = childBalances[childId] ?? swrBalance ?? initialBalance;
 
   // Sync recent ledgers using SWR
   const { data: recentLedgers = initialRecentLedgers, mutate: mutateLedgers, isLoading: ledgersLoading } = useSWR<Ledger[]>(
@@ -67,6 +78,13 @@ export function ChildDashboardClient({
     initialActiveMissions,
     { filter: "is_active=eq.true" }
   );
+
+  // Cache active missions to Zustand store
+  useEffect(() => {
+    if (activeMissions) {
+      setMissions(activeMissions);
+    }
+  }, [activeMissions, setMissions]);
 
 
 
@@ -112,7 +130,8 @@ export function ChildDashboardClient({
 
   const typeEmoji = { earn: "🎯", spend: "🎁", punish: "⚡" };
 
-  const isCurrentlyLoading = (balanceLoading && initialBalance === 0) || (ledgersLoading && recentLedgers.length === 0) || (activeMissionsLoading && activeMissions.length === 0);
+  const hasCachedData = childBalances[childId] !== undefined && storeMissions !== null;
+  const isCurrentlyLoading = !hasCachedData && ((balanceLoading && initialBalance === 0) || (ledgersLoading && recentLedgers.length === 0) || (activeMissionsLoading && activeMissions.length === 0));
 
   if (isCurrentlyLoading) {
     return (

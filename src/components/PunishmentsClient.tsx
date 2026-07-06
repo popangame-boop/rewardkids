@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useOptimistic, useTransition } from "react";
 import useSWR from "swr";
 import { Skeleton } from "@/components/ui/skeleton";
 import { addPunishment } from "@/app/actions/ledgers";
 import { createPunishment, updatePunishment, deletePunishment } from "@/app/actions/punishments";
 import { Punishment as PredefinedPunishment } from "@/types/supabase";
+import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,8 +62,17 @@ export function PunishmentsClient({
   const supabase = createClient();
   const [activeTab, setActiveTab] = useState<"apply" | "manage">("apply");
 
+  const { setPredefinedPunishments, predefinedPunishments } = useAppStore();
+
   // Sync templates in real-time
   const [templates, setTemplates, templatesLoading] = useRealtimeTable<PredefinedPunishment>("punishments", initialPredefinedPunishments);
+
+  // Cache templates to Zustand store
+  useEffect(() => {
+    if (templates) {
+      setPredefinedPunishments(templates);
+    }
+  }, [templates, setPredefinedPunishments]);
 
   // Sync children profiles client-side
   const { data: children = initialChildren, isLoading: childrenLoading } = useSWR<Child[]>(
@@ -98,6 +108,13 @@ export function PunishmentsClient({
       setPunishments(punishmentsData);
     }
   }, [punishmentsData]);
+
+  // React 19 useOptimistic and useTransition for Zero-Latency punishments list update
+  const [isPendingApply, startTransitionApply] = useTransition();
+  const [optimisticPunishments, setOptimisticPunishments] = useOptimistic(
+    punishments,
+    (state, newPunishment: PunishmentHistory) => [newPunishment, ...state]
+  );
 
 
 
@@ -292,36 +309,32 @@ export function PunishmentsClient({
     const penaltyReason = reason;
     const templateId = selectedTemplateId;
     const childName = children.find((c) => c.id === childId)?.name;
-    const previousPunishments = punishments;
 
-    // Optimistic Update: instantly add to UI punishments list and reset form
-    setPunishments((prev) => [
-      {
-        id: `temp-${Date.now()}`,
-        points: penaltyPoints,
-        description: penaltyReason,
-        created_at: new Date().toISOString(),
-        profiles: { name: childName ?? "" },
-      },
-      ...prev,
-    ]);
+    // Reset form and show success toast immediately
     setReason("");
     setPoints(5);
     setSelectedTemplateId(null);
     toast.success(`Punishment diberikan kepada ${childName} ⚡`);
 
-    setLoadingApply(true);
-    try {
-      await addPunishment(childId, penaltyPoints, penaltyReason, templateId || undefined);
-    } catch (error) {
-      // Revert Optimistic Update
-      setPunishments(previousPunishments);
-      toast.error("Gagal memberikan punishment: " + String(error));
-    }
-    setLoadingApply(false);
+    startTransitionApply(async () => {
+      setOptimisticPunishments({
+        id: `temp-${Date.now()}`,
+        points: penaltyPoints,
+        description: penaltyReason,
+        created_at: new Date().toISOString(),
+        profiles: { name: childName ?? "" },
+      });
+      try {
+        await addPunishment(childId, penaltyPoints, penaltyReason, templateId || undefined);
+        await mutatePunishments();
+      } catch (error) {
+        toast.error("Gagal memberikan punishment: " + String(error));
+      }
+    });
   };
 
-  const isCurrentlyLoading = (childrenLoading && children.length === 0) || (punishmentsLoading && punishments.length === 0) || (templatesLoading && templates.length === 0);
+  const hasCachedTemplates = predefinedPunishments !== null;
+  const isCurrentlyLoading = (childrenLoading && children.length === 0) || (punishmentsLoading && punishments.length === 0) || (!hasCachedTemplates && templatesLoading && templates.length === 0);
 
   if (isCurrentlyLoading) {
     return (
@@ -399,7 +412,7 @@ export function PunishmentsClient({
                 </div>
               ) : (
                 <div className="grid sm:grid-cols-2 gap-3">
-                  {templates
+                  { (predefinedPunishments || templates)
                     .filter((t) => t.is_active)
                     .map((template) => {
                       const isSelected = selectedTemplateId === template.id;
@@ -563,11 +576,11 @@ export function PunishmentsClient({
                 <Button
                   id="give-punishment-btn"
                   type="submit"
-                  disabled={loadingApply || !selectedChild}
+                  disabled={isPendingApply || !selectedChild}
                   className="w-full bg-fun-pink hover:bg-fun-pink/90 text-white font-black rounded-xl h-12 shadow-lg shadow-fun-pink/15 gap-2 border-none cursor-pointer"
                 >
                   <Zap className="w-4 h-4" />
-                  {loadingApply ? "Menerapkan..." : "Berikan Punishment"}
+                  {isPendingApply ? "Menerapkan..." : "Berikan Punishment"}
                 </Button>
               </form>
             </div>
@@ -579,14 +592,14 @@ export function PunishmentsClient({
               <Clock className="w-5 h-5 text-fun-purple" />
               Riwayat Hukuman
             </h2>
-            {punishments.length === 0 ? (
+            {optimisticPunishments.length === 0 ? (
               <div className="text-center py-20 flex-1 flex flex-col items-center justify-center border border-dashed border-border/80 rounded-2xl">
                 <Zap className="w-10 h-10 text-fun-purple/20 mx-auto mb-2 animate-bounce" />
                 <p className="text-fun-text/40 text-sm font-semibold">Belum ada punishment</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
-                {punishments.map((p) => (
+                {optimisticPunishments.map((p) => (
                   <div key={p.id} className="bg-fun-beige/50 border border-border/60 rounded-2xl p-4 flex items-start gap-3 shadow-none">
                     <div className="w-8 h-8 rounded-lg bg-fun-pink/10 flex items-center justify-center flex-shrink-0">
                       <Zap className="w-4 h-4 text-fun-pink" />

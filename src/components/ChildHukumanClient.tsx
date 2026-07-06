@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { createClient } from "@/lib/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAppStore } from "@/lib/store";
 
 interface ChildHukumanClientProps {
   punishments: Punishment[];
@@ -19,12 +20,21 @@ export function ChildHukumanClient({ punishments: initialPunishments, ledgers: i
   const supabase = createClient();
   const [selectedPunishment, setSelectedPunishment] = useState<Punishment | null>(null);
 
+  const { setPredefinedPunishments, predefinedPunishments } = useAppStore();
+
   // Sync punishments in real-time
   const [punishments, , punishmentsLoading] = useRealtimeTable<Punishment>(
     "punishments",
     initialPunishments,
     { filter: "is_active=eq.true" }
   );
+
+  // Cache punishments templates to Zustand store
+  useEffect(() => {
+    if (punishments) {
+      setPredefinedPunishments(punishments);
+    }
+  }, [punishments, setPredefinedPunishments]);
 
   // Sync punishment ledgers using SWR
   const { data: ledgers = initialLedgers, mutate: mutateLedgers, isLoading: ledgersLoading } = useSWR<Ledger[]>(
@@ -79,7 +89,8 @@ export function ChildHukumanClient({ punishments: initialPunishments, ledgers: i
   const totalDeducted = ledgers.reduce((sum, l) => sum + l.points, 0);
   const totalTimes = ledgers.length;
 
-  const isCurrentlyLoading = (punishmentsLoading && initialPunishments.length === 0) || (ledgersLoading && initialLedgers.length === 0);
+  const hasCachedPunishments = predefinedPunishments !== null;
+  const isCurrentlyLoading = (!hasCachedPunishments && punishmentsLoading && initialPunishments.length === 0) || (ledgersLoading && initialLedgers.length === 0);
 
   if (isCurrentlyLoading) {
     return (
@@ -96,6 +107,8 @@ export function ChildHukumanClient({ punishments: initialPunishments, ledgers: i
       </div>
     );
   }
+
+  const activeRules = predefinedPunishments || punishments;
 
   return (
     <div className="px-4 pt-6 pb-2 space-y-6 max-w-lg mx-auto">
@@ -128,16 +141,16 @@ export function ChildHukumanClient({ punishments: initialPunishments, ledgers: i
       </div>
 
       {/* Rules list */}
-      {punishments.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-[1.8rem] border border-border shadow-sm">
-          <div className="text-6xl mb-4">😇</div>
-          <p className="text-fun-dark-purple font-extrabold">Tidak ada peraturan hukuman</p>
-          <p className="text-fun-text/40 text-sm font-semibold">Orang tua belum menetapkan hukuman apa pun</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {punishments.map((punishment) => {
-            const count = getCount(punishment.id);
+  {activeRules.length === 0 ? (
+    <div className="text-center py-20 bg-white rounded-[1.8rem] border border-border shadow-sm">
+      <div className="text-6xl mb-4">😇</div>
+      <p className="text-fun-dark-purple font-extrabold">Tidak ada peraturan hukuman</p>
+      <p className="text-fun-text/40 text-sm font-semibold">Orang tua belum menetapkan hukuman apa pun</p>
+    </div>
+  ) : (
+    <div className="space-y-3">
+      {activeRules.map((punishment) => {
+        const count = getCount(punishment.id);
             return (
               <div
                 key={punishment.id}
