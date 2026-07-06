@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import useSWR from "swr";
 import { approveLedger, rejectLedger } from "@/app/actions/ledgers";
 import { getComments, addComment } from "@/app/actions/comments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { createClient } from "@/lib/supabase/client";
 import {
   Dialog,
   DialogContent,
@@ -34,18 +36,126 @@ interface ValidationsClientProps {
 }
 
 export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
-  const [ledgers, setLedgers] = useState(initialLedgers);
+  const supabase = createClient();
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [proofDialog, setProofDialog] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
 
+  // Sync validation queue using SWR
+  const { data: ledgers = initialLedgers, mutate: mutateLedgers } = useSWR<LedgerWithProfile[]>(
+    "validationLedgers",
+    async () => {
+      const { data, error } = await supabase
+        .from("ledgers")
+        .select("*, profiles!ledgers_user_id_fkey(name, avatar_url)")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    {
+      fallbackData: initialLedgers,
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+    }
+  );
+
+  // Sync validation queue in real-time
+  useEffect(() => {
+    const fetchLedgerWithProfile = async (id: string): Promise<LedgerWithProfile | null> => {
+      const { data, error } = await supabase
+        .from("ledgers")
+        .select("*, profiles!ledgers_user_id_fkey(name, avatar_url)")
+        .eq("id", id)
+        .single();
+      if (error || !data) return null;
+      return data as LedgerWithProfile;
+    };
+
+    const channel = supabase
+      .channel("parent-validation-ledgers")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ledgers",
+        },
+        async (payload) => {
+          if (payload.eventType === "INSERT") {
+            const newLedger = payload.new;
+            if (newLedger.status === "pending") {
+              const fullLedger = await fetchLedgerWithProfile(newLedger.id);
+              if (fullLedger) {
+                mutateLedgers((prev) => [fullLedger, ...(prev || [])], false);
+                // Play notification sound
+                try {
+                  const audio = new Audio("/sounds/notification.mp3");
+                  audio.play().catch(() => {});
+                } catch (e) {}
+              }
+            }
+          } else if (payload.eventType === "UPDATE") {
+            const updatedLedger = payload.new;
+            if (updatedLedger.status !== "pending") {
+              // Remove approved/rejected items from the validation queue
+              mutateLedgers((prev) => (prev || []).filter((l) => l.id !== updatedLedger.id), false);
+            } else {
+              const fullLedger = await fetchLedgerWithProfile(updatedLedger.id);
+              if (fullLedger) {
+                mutateLedgers(
+                  (prev) =>
+                    (prev || []).map((l) => (l.id === fullLedger.id ? fullLedger : l)),
+                  false
+                );
+              }
+            }
+          } else if (payload.eventType === "DELETE") {
+            const oldId = payload.old.id;
+            mutateLedgers((prev) => (prev || []).filter((l) => l.id !== oldId), false);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, mutateLedgers]);
+
   // Comments State
   const [comments, setComments] = useState<Record<string, any[]>>({});
   const [commentsLoading, setCommentsLoading] = useState<Record<string, boolean>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [shownComments, setShownComments] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("parent-comments-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "ledger_comments",
+        },
+        async (payload) => {
+          const newComment = payload.new;
+          const ledgerId = newComment.ledger_id;
+          if (comments[ledgerId]) {
+            const updatedComments = await getComments(ledgerId);
+            setComments((prev) => ({ ...prev, [ledgerId]: updatedComments }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [comments, supabase]);
 
   const toggleComments = async (ledgerId: string) => {
     if (shownComments[ledgerId]) {
@@ -82,15 +192,19 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
   };
 
   const handleApprove = async (id: string) => {
-    setLoading(id);
+    const previousLedgers = ledgers;
+    
+    // Optimistic Update: Instantly filter out approved item from UI list
+    mutateLedgers((prev) => (prev || []).filter((l) => l.id !== id), false);
+    toast.success("Tugas disetujui! ✅");
+
     try {
       await approveLedger(id);
-      setLedgers(ledgers.filter((l) => l.id !== id));
-      toast.success("Tugas disetujui! ✅");
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      mutateLedgers(previousLedgers, false);
+      toast.error("Gagal menyetujui tugas: " + String(error));
     }
-    setLoading(null);
   };
 
   const openReject = (id: string) => {
@@ -101,16 +215,21 @@ export function ValidationsClient({ initialLedgers }: ValidationsClientProps) {
 
   const handleReject = async () => {
     if (!selectedLedgerId) return;
-    setLoading(selectedLedgerId);
+    const id = selectedLedgerId;
+    const previousLedgers = ledgers;
+
+    // Optimistic Update: Instantly filter out rejected item and close modal
+    mutateLedgers((prev) => (prev || []).filter((l) => l.id !== id), false);
+    setRejectDialogOpen(false);
+    toast.success("Tugas ditolak");
+
     try {
-      await rejectLedger(selectedLedgerId, rejectReason);
-      setLedgers(ledgers.filter((l) => l.id !== selectedLedgerId));
-      toast.success("Tugas ditolak");
-      setRejectDialogOpen(false);
+      await rejectLedger(id, rejectReason);
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      mutateLedgers(previousLedgers, false);
+      toast.error("Gagal menolak tugas: " + String(error));
     }
-    setLoading(null);
   };
 
   const typeLabels: Record<string, string> = {

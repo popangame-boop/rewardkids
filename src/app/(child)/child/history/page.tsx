@@ -33,7 +33,7 @@ export default async function ChildHistoryPage() {
           <p className="text-fun-text/40 text-sm mt-1 font-semibold">Selesaikan misi pertamamu!</p>
         </div>
       ) : (
-        <ChildHistoryClient initialLedgers={ledgers} />
+        <ChildHistoryClient initialLedgers={ledgers} childId={profile!.id} />
       )}
     </div>
   );

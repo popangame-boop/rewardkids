@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import useSWR from "swr";
 import { Mission } from "@/types/supabase";
 import { submitMissionProof } from "@/app/actions/ledgers";
 import { createClient } from "@/lib/supabase/client";
 import { compressToWebP } from "@/lib/imageCompressor";
 import { Button } from "@/components/ui/button";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import {
   Dialog,
   DialogContent,
@@ -22,13 +24,76 @@ interface ChildMissionsClientProps {
   childId: string;
 }
 
-export function ChildMissionsClient({ missions, pendingMissionIds, childId }: ChildMissionsClientProps) {
+export function ChildMissionsClient({ missions: initialMissions, pendingMissionIds, childId }: ChildMissionsClientProps) {
   const supabase = createClient();
   const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync missions in real-time
+  const [missions] = useRealtimeTable<Mission>("missions", initialMissions);
+
+  // Sync pending mission IDs using SWR
+  const { data: pendingMissionList = [], mutate: mutatePending } = useSWR<string[]>(
+    ["pendingMissions", childId],
+    async () => {
+      const { data, error } = await supabase
+        .from("ledgers")
+        .select("mission_id")
+        .eq("user_id", childId)
+        .eq("status", "pending")
+        .eq("type", "earn");
+      if (error) throw error;
+      return (data || []).map((l) => l.mission_id).filter((id): id is string => !!id);
+    },
+    {
+      fallbackData: Array.from(pendingMissionIds).filter((id): id is string => id !== null),
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+    }
+  );
+
+  const pendingIds = new Set(pendingMissionList);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`child-ledgers-missions-${childId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ledgers",
+          filter: `user_id=eq.${childId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const newLedger = payload.new;
+            if (newLedger.status === "pending" && newLedger.type === "earn" && newLedger.mission_id) {
+              mutatePending((prev) => [...(prev || []), newLedger.mission_id], false);
+            }
+          } else if (payload.eventType === "UPDATE") {
+            const updatedLedger = payload.new;
+            if (updatedLedger.type === "earn" && updatedLedger.mission_id) {
+              if (updatedLedger.status !== "pending") {
+                mutatePending((prev) => (prev || []).filter((id) => id !== updatedLedger.mission_id), false);
+              } else {
+                mutatePending((prev) => [...(prev || []), updatedLedger.mission_id], false);
+              }
+            }
+          } else {
+            mutatePending();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [childId, supabase, mutatePending]);
 
   const categories = [...new Set(missions.map((m) => m.category ?? "Umum"))];
 
@@ -53,11 +118,20 @@ export function ChildMissionsClient({ missions, pendingMissionIds, childId }: Ch
     const urls = newFiles.map((f) => URL.createObjectURL(f));
     setPreviewUrls(urls);
   };
-
   const handleSubmit = async () => {
     if (!selectedMission) return;
-    setLoading(true);
+    const missionId = selectedMission.id;
+    const previousPendingList = pendingMissionList;
 
+    // Optimistic Update: Immediately add to pending IDs and close the modal/clean state
+    mutatePending((prev) => [...(prev || []), missionId], false);
+    setSelectedMission(null);
+    setFiles([]);
+    previewUrls.forEach(url => URL.revokeObjectURL(url));
+    setPreviewUrls([]);
+    toast.success("Misi berhasil dilaporkan! Tunggu konfirmasi orang tua 🎉");
+
+    setLoading(true);
     const urls: string[] = [];
 
     try {
@@ -65,10 +139,10 @@ export function ChildMissionsClient({ missions, pendingMissionIds, childId }: Ch
         const originalFile = files[i];
         
         // Compress to WebP
-        const compressed = await compressToWebP(originalFile, 0.8, 1200, 1200);
+        const compressed = await compressToWebP(originalFile, 0.8, 800, 800);
 
         // Path: uses childId and timestamp + index to ensure uniqueness
-        const path = `${childId}/${selectedMission.id}-${Date.now()}-${i}.webp`;
+        const path = `${childId}/${missionId}-${Date.now()}-${i}.webp`;
         const { error: uploadError } = await supabase.storage
           .from("proofs")
           .upload(path, compressed, { upsert: true });
@@ -81,19 +155,14 @@ export function ChildMissionsClient({ missions, pendingMissionIds, childId }: Ch
         urls.push(urlData.publicUrl);
       }
 
-      await submitMissionProof(selectedMission.id, urls[0] || "", urls);
-      toast.success("Misi berhasil dilaporkan! Tunggu konfirmasi orang tua 🎉");
-      setSelectedMission(null);
-      setFiles([]);
-      previewUrls.forEach(url => URL.revokeObjectURL(url));
-      setPreviewUrls([]);
-      window.location.reload();
+      await submitMissionProof(missionId, urls[0] || "", urls);
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      mutatePending(previousPendingList, false);
+      toast.error("Gagal mengirim laporan: " + String(error));
     }
     setLoading(false);
   };
-
   return (
     <div className="px-4 pt-6 pb-2 space-y-6 max-w-lg mx-auto">
       <div>
@@ -116,7 +185,7 @@ export function ChildMissionsClient({ missions, pendingMissionIds, childId }: Ch
                 <h2 className="text-fun-purple font-black text-xs uppercase tracking-wider pl-1">{cat}</h2>
                 <div className="space-y-3">
                   {catMissions.map((mission) => {
-                    const isPending = pendingMissionIds.has(mission.id);
+                    const isPending = pendingIds.has(mission.id);
                     return (
                       <div
                         key={mission.id}

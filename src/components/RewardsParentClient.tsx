@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ import {
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { compressToWebP } from "@/lib/imageCompressor";
+import Image from "next/image";
 import { Plus, Pencil, Trash2, Star, Gift, Package, ToggleLeft, ToggleRight, Upload, Loader2 } from "lucide-react";
 
 interface RewardsParentClientProps {
@@ -36,7 +38,7 @@ interface RewardsParentClientProps {
 }
 
 export function RewardsParentClient({ initialRewards }: RewardsParentClientProps) {
-  const [rewards, setRewards] = useState(initialRewards);
+  const [rewards, setRewards] = useRealtimeTable<Reward>("rewards", initialRewards);
   const [open, setOpen] = useState(false);
   const [editingReward, setEditingReward] = useState<Reward | null>(null);
   const [loading, setLoading] = useState(false);
@@ -96,43 +98,74 @@ export function RewardsParentClient({ initialRewards }: RewardsParentClientProps
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    try {
-      const payload = { ...form, image_url: form.image_url || null };
-      if (editingReward) {
-        await updateReward(editingReward.id, payload);
-        toast.success("Hadiah berhasil diperbarui!");
-        setRewards(rewards.map((r) => (r.id === editingReward.id ? { ...r, ...payload } as Reward : r)));
-      } else {
-        await createReward(payload);
-        toast.success("Hadiah berhasil ditambahkan! 🎁");
-        window.location.reload();
-      }
+    const originalRewards = rewards;
+    const isEditing = !!editingReward;
+    const rId = editingReward?.id;
+    const tempForm = { ...form, image_url: form.image_url || null };
+
+    if (isEditing && rId) {
+      // Optimistic Update for Edit: instantly update list item and close dialog
+      setRewards((prev) =>
+        prev.map((r) => (r.id === rId ? { ...r, ...tempForm } : r))
+      );
       setOpen(false);
       resetForm();
-    } catch (error) {
-      toast.error(String(error));
+      toast.success("Hadiah berhasil diperbarui!");
+
+      try {
+        await updateReward(rId, tempForm);
+      } catch (error) {
+        // Revert Optimistic Update
+        setRewards(originalRewards);
+        toast.error("Gagal memperbarui hadiah: " + String(error));
+      }
+    } else {
+      // Create operates with normal loading flow
+      setLoading(true);
+      try {
+        await createReward(tempForm);
+        toast.success("Hadiah berhasil ditambahkan! 🎁");
+        setOpen(false);
+        resetForm();
+      } catch (error) {
+        toast.error(String(error));
+      }
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleToggle = async (reward: Reward) => {
+    const originalRewards = rewards;
+    const targetStatus = !reward.is_active;
+
+    // Optimistic Update: toggle status instantly
+    setRewards((prev) =>
+      prev.map((r) => (r.id === reward.id ? { ...r, is_active: targetStatus } : r))
+    );
+    toast.success(targetStatus ? "Hadiah diaktifkan!" : "Hadiah dinonaktifkan");
+
     try {
-      await updateReward(reward.id, { is_active: !reward.is_active });
-      setRewards(rewards.map((r) => (r.id === reward.id ? { ...r, is_active: !r.is_active } : r)));
-      toast.success(reward.is_active ? "Hadiah dinonaktifkan" : "Hadiah diaktifkan!");
+      await updateReward(reward.id, { is_active: targetStatus });
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      setRewards(originalRewards);
+      toast.error("Gagal mengubah status hadiah: " + String(error));
     }
   };
 
   const handleDelete = async (id: string) => {
+    const originalRewards = rewards;
+
+    // Optimistic Update: filter out deleted item immediately
+    setRewards((prev) => prev.filter((r) => r.id !== id));
+    toast.success("Hadiah dihapus");
+
     try {
       await deleteReward(id);
-      setRewards(rewards.filter((r) => r.id !== id));
-      toast.success("Hadiah dihapus");
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      setRewards(originalRewards);
+      toast.error("Gagal menghapus hadiah: " + String(error));
     }
   };
 
@@ -223,8 +256,7 @@ export function RewardsParentClient({ initialRewards }: RewardsParentClientProps
               {/* Image */}
               <div className="h-32 bg-fun-beige flex items-center justify-center relative">
                 {reward.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={reward.image_url} alt={reward.title} className="w-full h-full object-cover" />
+                  <Image src={reward.image_url} alt={reward.title} fill className="object-cover" />
                 ) : (
                   <Gift className="w-12 h-12 text-fun-purple/20" />
                 )}

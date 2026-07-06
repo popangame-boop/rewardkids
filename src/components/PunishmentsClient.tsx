@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { addPunishment } from "@/app/actions/ledgers";
 import { createPunishment, updatePunishment, deletePunishment } from "@/app/actions/punishments";
 import { Punishment as PredefinedPunishment } from "@/types/supabase";
@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { createClient } from "@/lib/supabase/client";
 import {
   Dialog,
   DialogContent,
@@ -52,9 +54,68 @@ export function PunishmentsClient({
   recentPunishments,
   predefinedPunishments,
 }: PunishmentsClientProps) {
+  const supabase = createClient();
   const [activeTab, setActiveTab] = useState<"apply" | "manage">("apply");
-  const [punishments, setPunishments] = useState(recentPunishments);
-  const [templates, setTemplates] = useState<PredefinedPunishment[]>(predefinedPunishments);
+
+  // Sync templates in real-time
+  const [templates, setTemplates] = useRealtimeTable<PredefinedPunishment>("punishments", predefinedPunishments);
+
+  // Sync punishments in real-time
+  const [punishments, setPunishments] = useState<PunishmentHistory[]>(recentPunishments);
+
+  useEffect(() => {
+    const fetchRecentPunishment = async (id: string): Promise<PunishmentHistory | null> => {
+      const { data, error } = await supabase
+        .from("ledgers")
+        .select("id, points, description, created_at, profiles!ledgers_user_id_fkey(name)")
+        .eq("id", id)
+        .single();
+      if (error || !data) return null;
+      const profiles = Array.isArray((data as any).profiles) ? (data as any).profiles[0] : (data as any).profiles;
+      return {
+        id: data.id,
+        points: data.points,
+        description: data.description,
+        created_at: data.created_at,
+        profiles: profiles ? { name: profiles.name } : null,
+      } as PunishmentHistory;
+    };
+
+    const channel = supabase
+      .channel("parent-punishments-history")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ledgers",
+          filter: "type=eq.punish",
+        },
+        async (payload) => {
+          if (payload.eventType === "INSERT") {
+            const fullHistory = await fetchRecentPunishment(payload.new.id);
+            if (fullHistory) {
+              setPunishments((prev) => [fullHistory, ...prev]);
+            }
+          } else if (payload.eventType === "UPDATE") {
+            const fullHistory = await fetchRecentPunishment(payload.new.id);
+            if (fullHistory) {
+              setPunishments((prev) =>
+                prev.map((p) => (p.id === fullHistory.id ? fullHistory : p))
+              );
+            }
+          } else if (payload.eventType === "DELETE") {
+            const oldId = payload.old.id;
+            setPunishments((prev) => prev.filter((p) => p.id !== oldId));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase]);
 
   // Apply Punishment Form State
   const [selectedChild, setSelectedChild] = useState("");
@@ -93,50 +154,77 @@ export function PunishmentsClient({
   // Submit template creation/modification
   const handleTemplateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoadingTemplate(true);
-    try {
-      if (editingTemplate) {
-        await updatePunishment(editingTemplate.id, templateForm);
-        toast.success("Template punishment berhasil diperbarui!");
-        setTemplates(templates.map((t) => (t.id === editingTemplate.id ? { ...t, ...templateForm } : t)));
-      } else {
-        await createPunishment(templateForm);
-        toast.success("Template punishment berhasil dibuat! ⚡");
-        window.location.reload();
-      }
+    const originalTemplates = templates;
+    const isEditing = !!editingTemplate;
+    const tId = editingTemplate?.id;
+    const tempForm = { ...templateForm };
+
+    if (isEditing && tId) {
+      // Optimistic Update: instantly update template in list and close dialog
+      setTemplates((prev) =>
+        prev.map((t) => (t.id === tId ? { ...t, ...tempForm } : t))
+      );
       setOpenTemplateDialog(false);
       resetTemplateForm();
-    } catch (error) {
-      toast.error(String(error));
+      toast.success("Template punishment berhasil diperbarui!");
+
+      try {
+        await updatePunishment(tId, tempForm);
+      } catch (error) {
+        // Revert Optimistic Update
+        setTemplates(originalTemplates);
+        toast.error("Gagal memperbarui template punishment: " + String(error));
+      }
+    } else {
+      setLoadingTemplate(true);
+      try {
+        await createPunishment(templateForm);
+        toast.success("Template punishment berhasil dibuat! ⚡");
+        setOpenTemplateDialog(false);
+        resetTemplateForm();
+      } catch (error) {
+        toast.error(String(error));
+      }
+      setLoadingTemplate(false);
     }
-    setLoadingTemplate(false);
   };
 
   const handleToggleTemplate = async (template: PredefinedPunishment) => {
+    const originalTemplates = templates;
+    const targetStatus = !template.is_active;
+
+    // Optimistic Update: toggle immediately
+    setTemplates((prev) =>
+      prev.map((t) => (t.id === template.id ? { ...t, is_active: targetStatus } : t))
+    );
+    toast.success(targetStatus ? "Template diaktifkan!" : "Template dinonaktifkan");
+
     try {
-      await updatePunishment(template.id, { is_active: !template.is_active });
-      setTemplates(templates.map((t) => (t.id === template.id ? { ...t, is_active: !t.is_active } : t)));
-      toast.success(template.is_active ? "Template dinonaktifkan" : "Template diaktifkan!");
+      await updatePunishment(template.id, { is_active: targetStatus });
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      setTemplates(originalTemplates);
+      toast.error("Gagal mengubah status template: " + String(error));
     }
   };
 
   const handleDeleteTemplate = async (id: string) => {
-    try {
-      await deleteTemplate(id);
-    } catch (error) {
-      toast.error(String(error));
-    }
+    await deleteTemplate(id);
   };
 
   const deleteTemplate = async (id: string) => {
+    const originalTemplates = templates;
+
+    // Optimistic Update: remove immediately
+    setTemplates((prev) => prev.filter((t) => t.id !== id));
+    toast.success("Template punishment dihapus");
+
     try {
       await deletePunishment(id);
-      setTemplates(templates.filter((t) => t.id !== id));
-      toast.success("Template punishment dihapus");
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      setTemplates(originalTemplates);
+      toast.error("Gagal menghapus template punishment: " + String(error));
     }
   };
 
@@ -161,26 +249,36 @@ export function PunishmentsClient({
       toast.error("Pilih anak terlebih dahulu");
       return;
     }
+    const childId = selectedChild;
+    const penaltyPoints = points;
+    const penaltyReason = reason;
+    const templateId = selectedTemplateId;
+    const childName = children.find((c) => c.id === childId)?.name;
+    const previousPunishments = punishments;
+
+    // Optimistic Update: instantly add to UI punishments list and reset form
+    setPunishments((prev) => [
+      {
+        id: `temp-${Date.now()}`,
+        points: penaltyPoints,
+        description: penaltyReason,
+        created_at: new Date().toISOString(),
+        profiles: { name: childName ?? "" },
+      },
+      ...prev,
+    ]);
+    setReason("");
+    setPoints(5);
+    setSelectedTemplateId(null);
+    toast.success(`Punishment diberikan kepada ${childName} ⚡`);
+
     setLoadingApply(true);
     try {
-      await addPunishment(selectedChild, points, reason, selectedTemplateId || undefined);
-      const childName = children.find((c) => c.id === selectedChild)?.name;
-      toast.success(`Punishment diberikan kepada ${childName} ⚡`);
-      setPunishments([
-        {
-          id: Date.now().toString(),
-          points,
-          description: reason,
-          created_at: new Date().toISOString(),
-          profiles: { name: childName ?? "" },
-        },
-        ...punishments,
-      ]);
-      setReason("");
-      setPoints(5);
-      setSelectedTemplateId(null);
+      await addPunishment(childId, penaltyPoints, penaltyReason, templateId || undefined);
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      setPunishments(previousPunishments);
+      toast.error("Gagal memberikan punishment: " + String(error));
     }
     setLoadingApply(false);
   };

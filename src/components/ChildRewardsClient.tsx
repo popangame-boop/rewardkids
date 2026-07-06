@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import useSWR from "swr";
 import { Reward } from "@/types/supabase";
 import { redeemReward } from "@/app/actions/ledgers";
 import { Button } from "@/components/ui/button";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { createClient } from "@/lib/supabase/client";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,23 +24,72 @@ import Image from "next/image";
 interface ChildRewardsClientProps {
   rewards: Reward[];
   balance: number;
+  childId: string;
 }
 
-export function ChildRewardsClient({ rewards, balance: initialBalance }: ChildRewardsClientProps) {
-  const [balance, setBalance] = useState(initialBalance);
+export function ChildRewardsClient({ rewards: initialRewards, balance: initialBalance, childId }: ChildRewardsClientProps) {
+  const supabase = createClient();
   const [selectedReward, setSelectedReward] = useState<Reward | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Sync rewards in real-time
+  const [rewards] = useRealtimeTable<Reward>("rewards", initialRewards);
+
+  // Sync child balance using SWR
+  const { data: balance = initialBalance, mutate: mutateBalance } = useSWR<number>(
+    ["balance", childId],
+    async () => {
+      const { data, error } = await supabase.rpc("get_child_balance", { p_user_id: childId });
+      if (error) throw error;
+      return data !== null ? data : 0;
+    },
+    {
+      fallbackData: initialBalance,
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+    }
+  );
+
+  // Sync child balance in real-time
+  useEffect(() => {
+    const channel = supabase
+      .channel(`child-balance-rewards-${childId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ledgers",
+          filter: `user_id=eq.${childId}`,
+        },
+        () => {
+          mutateBalance();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [childId, supabase, mutateBalance]);
+
   const handleRedeem = async () => {
     if (!selectedReward) return;
+    const reward = selectedReward;
+    const previousBalance = balance;
+
+    // Optimistic Update: Deduct balance instantly and close dialog
+    mutateBalance((prev) => (prev !== undefined ? prev - reward.point_cost : previousBalance - reward.point_cost), false);
+    setSelectedReward(null);
+    toast.success(`Penukaran "${reward.title}" berhasil! 🎁\nMenunggu persetujuan orang tua.`);
+
     setLoading(true);
     try {
-      await redeemReward(selectedReward.id);
-      toast.success(`Penukaran "${selectedReward.title}" berhasil! 🎁\nMenunggu persetujuan orang tua.`);
-      setBalance(balance - selectedReward.point_cost);
-      setSelectedReward(null);
+      await redeemReward(reward.id);
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      mutateBalance(previousBalance, false);
+      toast.error("Gagal menukar hadiah: " + String(error));
     }
     setLoading(false);
   };

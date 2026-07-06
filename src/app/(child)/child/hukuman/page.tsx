@@ -28,6 +28,7 @@ export default async function ChildHukumanPage() {
     <ChildHukumanClient
       punishments={punishmentsRes.data ?? []}
       ledgers={ledgersRes.data ?? []}
+      childId={profile.id}
     />
   );
 }

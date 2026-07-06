@@ -22,6 +22,7 @@ export default async function ChildRewardsPage() {
     <ChildRewardsClient
       rewards={rewardsRes.data ?? []}
       balance={balanceRes.data ?? 0}
+      childId={profile!.id}
     />
   );
 }

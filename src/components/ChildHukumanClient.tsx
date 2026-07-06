@@ -1,17 +1,67 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import useSWR from "swr";
 import { Punishment, Ledger } from "@/types/supabase";
 import { Star, ShieldAlert, AlertTriangle, HelpCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { createClient } from "@/lib/supabase/client";
 
 interface ChildHukumanClientProps {
   punishments: Punishment[];
   ledgers: Ledger[];
+  childId: string;
 }
 
-export function ChildHukumanClient({ punishments, ledgers }: ChildHukumanClientProps) {
+export function ChildHukumanClient({ punishments: initialPunishments, ledgers: initialLedgers, childId }: ChildHukumanClientProps) {
+  const supabase = createClient();
   const [selectedPunishment, setSelectedPunishment] = useState<Punishment | null>(null);
+
+  // Sync punishments in real-time
+  const [punishments] = useRealtimeTable<Punishment>("punishments", initialPunishments);
+
+  // Sync punishment ledgers using SWR
+  const { data: ledgers = initialLedgers, mutate: mutateLedgers } = useSWR<Ledger[]>(
+    ["hukumanLedgers", childId],
+    async () => {
+      const { data, error } = await supabase
+        .from("ledgers")
+        .select("*")
+        .eq("user_id", childId)
+        .eq("type", "punish")
+        .eq("status", "approved");
+      if (error) throw error;
+      return data || [];
+    },
+    {
+      fallbackData: initialLedgers,
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+    }
+  );
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`child-punish-ledgers-${childId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ledgers",
+          filter: `user_id=eq.${childId}`,
+        },
+        () => {
+          mutateLedgers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [childId, supabase, mutateLedgers]);
 
   // Helper to count how many times a punishment was received
   const getCount = (punishmentId: string) => {

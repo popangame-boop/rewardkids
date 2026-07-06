@@ -30,5 +30,5 @@ export default async function ChildrenPage() {
     })
   );
 
-  return <ChildrenClient initialChildren={childrenWithBalance} />;
+  return <ChildrenClient initialChildren={childrenWithBalance} parentId={parent!.id} />;
 }

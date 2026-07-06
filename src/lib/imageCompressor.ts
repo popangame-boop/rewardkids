@@ -1,3 +1,5 @@
+import imageCompression from "browser-image-compression";
+
 /**
  * Compresses an image file and converts it to WebP format.
  * Supports all standard formats as well as HEIC/HEIF (converts them first).
@@ -45,61 +47,81 @@ export async function compressToWebP(
     }
   }
 
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(fileToProcess);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let width = img.width;
-        let height = img.height;
-
-        // Calculate aspect ratio and resize if necessary
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Failed to get 2d context from canvas"));
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              reject(new Error("Canvas to Blob conversion failed"));
-              return;
-            }
-            // Create a new file from blob with .webp extension
-            const newName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
-            const compressedFile = new File([blob], newName, {
-              type: "image/webp",
-              lastModified: Date.now(),
-            });
-            resolve(compressedFile);
-          },
-          "image/webp",
-          quality
-        );
-      };
-      img.onerror = (err) => reject(new Error("Gagal membaca file gambar. Pastikan format file valid."));
+  // Attempt compression with browser-image-compression
+  try {
+    const options = {
+      maxSizeMB: 1, // Target max size
+      maxWidthOrHeight: Math.max(maxWidth, maxHeight),
+      useWebWorker: true,
+      fileType: "image/webp",
+      initialQuality: quality,
     };
-    reader.onerror = (err) => reject(err);
-  });
+
+    const compressedBlob = await imageCompression(fileToProcess, options);
+    const newName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
+    return new File([compressedBlob], newName, {
+      type: "image/webp",
+      lastModified: Date.now(),
+    });
+  } catch (error) {
+    console.error("browser-image-compression failed, using canvas fallback:", error);
+    
+    // Canvas-based fallback
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(fileToProcess);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+
+          // Calculate aspect ratio and resize if necessary
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Failed to get 2d context from canvas"));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error("Canvas to Blob conversion failed"));
+                return;
+              }
+              const newName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
+              const compressedFile = new File([blob], newName, {
+                type: "image/webp",
+                lastModified: Date.now(),
+              });
+              resolve(compressedFile);
+            },
+            "image/webp",
+            quality
+          );
+        };
+        img.onerror = () => reject(new Error("Gagal membaca file gambar. Pastikan format file valid."));
+      };
+      reader.onerror = (err) => reject(err);
+    });
+  }
 }

@@ -427,6 +427,7 @@ CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
 CREATE INDEX IF NOT EXISTS idx_profiles_parent_id ON public.profiles(parent_id);
 CREATE INDEX IF NOT EXISTS idx_ledgers_user_id ON public.ledgers(user_id);
 CREATE INDEX IF NOT EXISTS idx_ledgers_status ON public.ledgers(status);
+CREATE INDEX IF NOT EXISTS idx_ledgers_user_id_status ON public.ledgers(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_ledgers_type ON public.ledgers(type);
 CREATE INDEX IF NOT EXISTS idx_missions_is_active ON public.missions(is_active);
 CREATE INDEX IF NOT EXISTS idx_rewards_is_active ON public.rewards(is_active);

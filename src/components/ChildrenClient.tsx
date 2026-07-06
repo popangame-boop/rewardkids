@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createChildAccount, resetChildActivity } from "@/app/actions/children";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { createClient } from "@/lib/supabase/client";
 import {
   Dialog,
   DialogContent,
@@ -31,9 +32,11 @@ type ChildWithBalance = Profile & { balance: number };
 
 interface ChildrenClientProps {
   initialChildren: ChildWithBalance[];
+  parentId: string;
 }
 
-export function ChildrenClient({ initialChildren }: ChildrenClientProps) {
+export function ChildrenClient({ initialChildren, parentId }: ChildrenClientProps) {
+  const supabase = createClient();
   const [children, setChildren] = useState(initialChildren);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -43,16 +46,105 @@ export function ChildrenClient({ initialChildren }: ChildrenClientProps) {
     pin: "",
   });
 
+  // Sync children profiles and balances in real-time
+  useEffect(() => {
+    const fetchChildWithBalance = async (id: string): Promise<ChildWithBalance | null> => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (!profile) return null;
+      const { data: balance } = await supabase.rpc("get_child_balance", { p_user_id: id });
+      return { ...profile, balance: balance ?? 0 } as ChildWithBalance;
+    };
+
+    // 1. Subscribe to profiles changes under this parent
+    const profilesChannel = supabase
+      .channel("parent-children-profiles")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "profiles",
+          filter: `parent_id=eq.${parentId}`,
+        },
+        async (payload) => {
+          if (payload.eventType === "INSERT") {
+            const childWithBal = await fetchChildWithBalance(payload.new.id);
+            if (childWithBal) {
+              setChildren((prev) => [...prev, childWithBal]);
+            }
+          } else if (payload.eventType === "UPDATE") {
+            const childWithBal = await fetchChildWithBalance(payload.new.id);
+            if (childWithBal) {
+              setChildren((prev) =>
+                prev.map((c) => (c.id === childWithBal.id ? childWithBal : c))
+              );
+            }
+          } else if (payload.eventType === "DELETE") {
+            const deletedId = payload.old.id;
+            setChildren((prev) => prev.filter((c) => c.id !== deletedId));
+          }
+        }
+      )
+      .subscribe();
+
+    // 2. Subscribe to ledgers to recalculate balance
+    const ledgersChannel = supabase
+      .channel("parent-children-ledgers")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ledgers",
+        },
+        async (payload) => {
+          const ledger = (payload.new || payload.old) as any;
+          if (ledger && ledger.user_id) {
+            // Check if this ledger belongs to one of our children
+            const exists = children.some((c) => c.id === ledger.user_id);
+            if (exists || payload.eventType === "INSERT") {
+              const updatedChild = await fetchChildWithBalance(ledger.user_id);
+              if (updatedChild && updatedChild.parent_id === parentId) {
+                setChildren((prev) => {
+                  const alreadyListed = prev.some((c) => c.id === updatedChild.id);
+                  if (alreadyListed) {
+                    return prev.map((c) => (c.id === updatedChild.id ? updatedChild : c));
+                  } else {
+                    return [...prev, updatedChild];
+                  }
+                });
+              }
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(profilesChannel);
+      supabase.removeChannel(ledgersChannel);
+    };
+  }, [parentId, supabase, children]);
+
   const handleResetActivity = async (childId: string, childName: string) => {
-    setResettingId(childId);
+    const originalChildren = children;
+
+    // Optimistic Update: Set child balance/activity to 0 immediately in UI
+    setChildren((prev) =>
+      prev.map((c) => (c.id === childId ? { ...c, balance: 0 } : c))
+    );
+    toast.success(`Aktivitas dan poin ${childName} berhasil direset ke 0! 🎉`);
+
     try {
       await resetChildActivity(childId);
-      toast.success(`Aktivitas dan poin ${childName} berhasil direset ke 0! 🎉`);
-      window.location.reload();
     } catch (error) {
+      // Revert Optimistic Update
+      setChildren(originalChildren);
       toast.error("Gagal mereset aktivitas: " + String(error));
-    } finally {
-      setResettingId(null);
     }
   };
 
@@ -68,7 +160,6 @@ export function ChildrenClient({ initialChildren }: ChildrenClientProps) {
       toast.success(`Akun ${form.name} berhasil dibuat! 🎉`);
       setOpen(false);
       setForm({ name: "", pin: "" });
-      window.location.reload();
     } catch (error) {
       toast.error(String(error));
     }

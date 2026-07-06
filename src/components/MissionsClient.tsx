@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +38,7 @@ interface MissionsClientProps {
 }
 
 export function MissionsClient({ initialMissions }: MissionsClientProps) {
-  const [missions, setMissions] = useState(initialMissions);
+  const [missions, setMissions] = useRealtimeTable<Mission>("missions", initialMissions);
   const [open, setOpen] = useState(false);
   const [editingMission, setEditingMission] = useState<Mission | null>(null);
   const [loading, setLoading] = useState(false);
@@ -68,43 +69,74 @@ export function MissionsClient({ initialMissions }: MissionsClientProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    try {
-      if (editingMission) {
-        await updateMission(editingMission.id, form);
-        toast.success("Misi berhasil diperbarui!");
-        setMissions(missions.map((m) => (m.id === editingMission.id ? { ...m, ...form } : m)));
-      } else {
-        await createMission(form);
-        toast.success("Misi berhasil dibuat! 🎯");
-        // Refresh will happen via server revalidation
-        window.location.reload();
-      }
+    const originalMissions = missions;
+    const isEditing = !!editingMission;
+    const mId = editingMission?.id;
+    const tempForm = { ...form };
+
+    if (isEditing && mId) {
+      // Optimistic Update for Edit: instantly update list item and close dialog
+      setMissions((prev) =>
+        prev.map((m) => (m.id === mId ? { ...m, ...tempForm } : m))
+      );
       setOpen(false);
       resetForm();
-    } catch (error) {
-      toast.error(String(error));
+      toast.success("Misi berhasil diperbarui!");
+
+      try {
+        await updateMission(mId, tempForm);
+      } catch (error) {
+        // Revert Optimistic Update
+        setMissions(originalMissions);
+        toast.error("Gagal memperbarui misi: " + String(error));
+      }
+    } else {
+      // Create operates with normal loading flow
+      setLoading(true);
+      try {
+        await createMission(form);
+        toast.success("Misi berhasil dibuat! 🎯");
+        setOpen(false);
+        resetForm();
+      } catch (error) {
+        toast.error(String(error));
+      }
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleToggle = async (mission: Mission) => {
+    const originalMissions = missions;
+    const targetStatus = !mission.is_active;
+
+    // Optimistic Update: toggle status instantly
+    setMissions((prev) =>
+      prev.map((m) => (m.id === mission.id ? { ...m, is_active: targetStatus } : m))
+    );
+    toast.success(targetStatus ? "Misi diaktifkan!" : "Misi dinonaktifkan");
+
     try {
-      await updateMission(mission.id, { is_active: !mission.is_active });
-      setMissions(missions.map((m) => (m.id === mission.id ? { ...m, is_active: !m.is_active } : m)));
-      toast.success(mission.is_active ? "Misi dinonaktifkan" : "Misi diaktifkan!");
+      await updateMission(mission.id, { is_active: targetStatus });
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      setMissions(originalMissions);
+      toast.error("Gagal mengubah status misi: " + String(error));
     }
   };
 
   const handleDelete = async (id: string) => {
+    const originalMissions = missions;
+
+    // Optimistic Update: filter out deleted item immediately
+    setMissions((prev) => prev.filter((m) => m.id !== id));
+    toast.success("Misi dihapus");
+
     try {
       await deleteMission(id);
-      setMissions(missions.filter((m) => m.id !== id));
-      toast.success("Misi dihapus");
     } catch (error) {
-      toast.error(String(error));
+      // Revert Optimistic Update
+      setMissions(originalMissions);
+      toast.error("Gagal menghapus misi: " + String(error));
     }
   };
 

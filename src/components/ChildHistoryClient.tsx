@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckCircle, XCircle, Clock, Star, MessageSquare, Send, Loader2, Image as ImageIcon } from "lucide-react";
 import { getComments, addComment } from "@/app/actions/comments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { createClient } from "@/lib/supabase/client";
 import Image from "next/image";
 
 type Ledger = {
@@ -24,17 +26,46 @@ type Ledger = {
 
 interface ChildHistoryClientProps {
   initialLedgers: Ledger[];
+  childId: string;
 }
 
-export function ChildHistoryClient({ initialLedgers }: ChildHistoryClientProps) {
-  const [ledgers, setLedgers] = useState<Ledger[]>(initialLedgers);
+export function ChildHistoryClient({ initialLedgers, childId }: ChildHistoryClientProps) {
+  const supabase = createClient();
+  const [ledgers, setLedgers] = useRealtimeTable<Ledger>("ledgers", initialLedgers, {
+    filter: `user_id=eq.${childId}`,
+  });
   const [proofDialog, setProofDialog] = useState<string | null>(null);
 
-  // Comments State
   const [comments, setComments] = useState<Record<string, any[]>>({});
   const [commentsLoading, setCommentsLoading] = useState<Record<string, boolean>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [shownComments, setShownComments] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("history-comments-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "ledger_comments",
+        },
+        async (payload) => {
+          const newComment = payload.new;
+          const ledgerId = newComment.ledger_id;
+          if (comments[ledgerId]) {
+            const updatedComments = await getComments(ledgerId);
+            setComments((prev) => ({ ...prev, [ledgerId]: updatedComments }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [comments, supabase]);
 
   const toggleComments = async (ledgerId: string) => {
     if (shownComments[ledgerId]) {
